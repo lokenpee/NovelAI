@@ -1,0 +1,16 @@
+# Project-local working files and generated content
+房东模拟器Z5.20.json
+回到明朝当王爷.txt
+回到明朝当王爷（删减）-角色卡-202608311621.json
+回到明朝当王爷（删减）.txt
+AGENTS.md
+PRD - 副本.md
+PRD.md
+
+docs/sillytavern-wiki/
+
+# Local editor / tooling artifacts
+.vscode/
+.DS_Store
+Thumbs.db
+*.log
