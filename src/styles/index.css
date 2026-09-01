@@ -64,9 +64,13 @@
 .nai-upload-zone span { color:var(--nai-text-3); font-size:12px; }
 .nai-file-status { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-top:10px; color:var(--nai-text-2); font-size:12px; }
 .nai-file-status > span { flex:1; min-width:180px; }
-.nai-source-details { margin-top:10px; border:1px solid var(--nai-border); border-radius:7px; overflow:hidden; }
-.nai-source-details summary { padding:8px 10px; background:var(--nai-bg-card); color:var(--nai-text-2); cursor:pointer; font-size:12px; }
-.nai-source-details textarea { border:0 !important; border-radius:0 !important; }
+.nai-loaded-file { display:flex; align-items:center; gap:12px; padding:14px 16px; background:var(--nai-bg-card); border:1px solid var(--nai-border-hi); border-radius:9px; }
+.nai-loaded-file > input { display:none; }
+.nai-loaded-file-icon { flex:0 0 auto; font-size:28px; }
+.nai-loaded-file-info { display:flex; flex:1; min-width:0; flex-direction:column; gap:3px; }
+.nai-loaded-file-info strong { overflow:hidden; color:var(--nai-text); text-overflow:ellipsis; white-space:nowrap; font-size:14px; }
+.nai-loaded-file-info span { color:var(--nai-text-3); font-size:12px; }
+.nai-loaded-file-actions { display:flex; flex:0 0 auto; gap:6px; }
 
 .nai-input, #novelai-panel textarea, #novelai-panel input, #novelai-panel select { width:100%; max-width:100%; color:var(--nai-text); background:var(--nai-bg-input); border:1px solid var(--nai-border); border-radius:6px; padding:8px 10px; font:inherit; font-size:13px; outline:none; }
 #novelai-panel textarea { resize:vertical; line-height:1.5; }
@@ -87,14 +91,29 @@
 
 .nai-queue-summary { display:flex; align-items:center; flex-wrap:wrap; gap:10px; padding-bottom:10px; color:var(--nai-text-2); font-size:12px; }
 .nai-queue-summary button { margin-left:auto; }
+.nai-queue-hint { color:var(--nai-text-3); }
 .nai-chapter-queue { display:flex; flex-direction:column; gap:7px; max-height:460px; overflow-y:auto; }
-.nai-chapter-card { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; background:var(--nai-bg-card); border:1px solid var(--nai-border); border-radius:8px; }
+.nai-chapter-card { padding:10px 12px; background:var(--nai-bg-card); border:1px solid var(--nai-border); border-radius:8px; }
 .nai-chapter-card:hover { border-color:var(--nai-border-hi); background:var(--nai-bg-hover); }
+.nai-chapter-card.is-open { border-color:var(--nai-accent); }
+.nai-chapter-row { display:flex; align-items:center; justify-content:space-between; gap:10px; }
 .nai-chapter-main, .nai-chapter-title { display:flex; align-items:center; gap:9px; min-width:0; }
-.nai-chapter-title { flex-direction:column; align-items:flex-start; gap:2px; }
+.nai-chapter-main { flex:1; }
+.nai-chapter-title { flex:1; flex-direction:column; align-items:flex-start !important; gap:2px !important; padding:0 !important; background:transparent !important; border:0 !important; text-align:left; }
 .nai-chapter-title strong { overflow:hidden; max-width:430px; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+.nai-chapter-title strong em { margin-right:7px; color:var(--nai-accent-hi); font-size:10px; font-style:normal; }
 .nai-chapter-title span, .nai-chapter-actions { color:var(--nai-text-3); font-size:11px; }
+.nai-chapter-title small { overflow:hidden; max-width:430px; color:var(--nai-text-3); text-overflow:ellipsis; white-space:nowrap; font-size:10px; font-weight:400; }
 .nai-chapter-actions { display:flex; flex-wrap:wrap; gap:5px; }
+.nai-chapter-source { margin-top:10px; padding-top:10px; border-top:1px solid var(--nai-border); }
+.nai-chapter-source-header { display:flex; align-items:center; gap:9px; margin-bottom:10px; color:var(--nai-text-2); font-size:12px; }
+.nai-chapter-source-header strong { color:var(--nai-text); font-size:13px; }
+.nai-chapter-source-header button { margin-left:auto; }
+.nai-chapter-field { display:block; margin-top:9px; }
+.nai-chapter-field > span { display:block; margin-bottom:5px; color:var(--nai-text-3); font-size:11px; }
+.nai-chapter-field textarea { min-height:250px; }
+.nai-chapter-source-actions { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:9px; }
+.nai-chapter-source-actions span { color:var(--nai-warning); font-size:11px; }
 
 .nai-prompt-intro { margin-bottom:10px; color:var(--nai-text-2); font-size:12px; line-height:1.55; }
 .nai-category-stack { display:flex; flex-direction:column; gap:7px; }
@@ -164,9 +183,13 @@ fieldset label input, fieldset label select { margin-top:4px; }
   #novelai-panel { inset:8px 2vw auto; width:96vw; max-height:calc(100dvh - 16px); }
   .nai-tabs { overflow-x:auto; flex-wrap:nowrap; }
   .nai-grid-2 { grid-template-columns:1fr; }
-  .nai-chapter-card { align-items:flex-start; flex-direction:column; }
+  .nai-loaded-file { align-items:flex-start; flex-wrap:wrap; }
+  .nai-loaded-file-actions { width:100%; }
+  .nai-loaded-file-actions .nai-btn { flex:1; }
+  .nai-chapter-row { align-items:flex-start; flex-direction:column; }
   .nai-chapter-actions { width:100%; }
   .nai-chapter-title strong { max-width:calc(96vw - 80px); }
+  .nai-chapter-source-actions { align-items:flex-start; flex-direction:column; }
   .nai-result-toolbar { align-items:flex-start; flex-direction:column; }
   .nai-result-toolbar > div:last-child { width:100%; }
   .nai-result-toolbar > div:last-child .nai-btn { flex:1; }

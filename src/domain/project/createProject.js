@@ -1,16 +1,18 @@
 import { clone, DEFAULT_CATEGORIES, DEFAULT_CHAPTER_REGEX, PROCESS_STATUS, SCHEMA_VERSION } from '../constants.js';
+import { normalizeSourceFile } from './normalizeSourceFile.js';
 
 function makeProjectId() {
   return `project_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function createProject(sourceText = '') {
+export function createProject(sourceText = '', sourceFile = null) {
   const categories = clone(DEFAULT_CATEGORIES);
   return {
     schemaVersion: SCHEMA_VERSION,
     projectId: makeProjectId(),
     version: 1,
     sourceText: String(sourceText),
+    sourceFile: normalizeSourceFile(sourceFile),
     sourceVersion: 1,
     chapterRegex: DEFAULT_CHAPTER_REGEX,
     chapters: [],

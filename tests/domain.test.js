@@ -24,6 +24,11 @@ import { readSseResponse } from '../src/services/api/responseParsers.js';
 import { ProjectStore } from '../src/services/storage/projectStore.js';
 import { SettingsStore } from '../src/services/storage/settingsStore.js';
 import { mountDrawerAtTopbar } from '../src/ui/drawerLauncher.js';
+import { normalizeSourceFile } from '../src/domain/project/normalizeSourceFile.js';
+import { renderWorkspace } from '../src/ui/views/workspaceView.js';
+import { readImportFile } from '../src/services/files/readImportFile.js';
+import { formatBytes } from '../src/utils/html.js';
+import { updateExtensionFromRepo } from '../src/services/platform/extensionUpdater.js';
 
 test('drawer launcher is mounted after the SillyTavern extensions button', () => {
   const wrapper = { id: 'novelai-wrapper' };
@@ -41,6 +46,78 @@ test('drawer launcher is mounted after the SillyTavern extensions button', () =>
 
   assert.equal(mountDrawerAtTopbar(documentRef, '<div></div>'), wrapper);
   assert.deepEqual(placement, { position: 'afterend', element: wrapper, receiver: 'anchor' });
+});
+
+test('source file metadata keeps only safe display fields', () => {
+  assert.deepEqual(normalizeSourceFile({ name: ' 小说.txt ', size: 123.9, lastModified: 456, encoding: 'gb18030' }), { name: '小说.txt', size: 123, lastModified: 456, encoding: 'GB18030' });
+  assert.equal(normalizeSourceFile({ name: '' }), null);
+  assert.equal(formatBytes(1536), '1.5 KB');
+});
+
+test('TXT import detects UTF-8 and common Chinese legacy encoding', async () => {
+  const utf8Bytes = new TextEncoder().encode('第一章\n正文');
+  const utf8 = await readImportFile({ name: 'utf8.txt', size: utf8Bytes.byteLength, arrayBuffer: async () => utf8Bytes.buffer });
+  assert.equal(utf8.encoding, 'UTF-8');
+  assert.equal(utf8.text, '第一章\n正文');
+
+  const gb18030Bytes = Uint8Array.from([0xC4, 0xE3, 0xBA, 0xC3]);
+  const legacy = await readImportFile({ name: 'legacy.txt', size: gb18030Bytes.byteLength, arrayBuffer: async () => gb18030Bytes.buffer });
+  assert.equal(legacy.encoding, 'GB18030');
+  assert.equal(legacy.text, '你好');
+  await assert.rejects(() => readImportFile({ name: 'bad.exe', size: 1, arrayBuffer: async () => new Uint8Array([1]).buffer }), /仅支持 TXT/);
+});
+
+test('plugin updater sends SillyTavern CSRF headers and uses the current folder', async () => {
+  const requests = [];
+  const result = await updateExtensionFromRepo({
+    currentFolder: 'NovelAI-dev',
+    getRequestHeaders: () => ({ 'Content-Type': 'application/json', 'X-CSRF-Token': 'csrf-token' }),
+    fetchImpl: async (path, options) => {
+      requests.push({ path, options, body: JSON.parse(options.body) });
+      return new Response(JSON.stringify({ isUpToDate: false, shortCommitHash: 'abc1234' }), { status: 200 });
+    },
+  });
+  assert.equal(result.extensionFolder, 'NovelAI-dev');
+  assert.equal(result.shortCommitHash, 'abc1234');
+  assert.equal(requests[0].options.headers['X-CSRF-Token'], 'csrf-token');
+  assert.deepEqual(requests[0].body, { extensionName: 'NovelAI-dev', global: false });
+  assert.equal(requests.some((item) => item.body.extensionName === 'StoryWeaver'), false);
+});
+
+test('plugin updater detects a global installation after the local path misses', async () => {
+  const scopes = [];
+  const result = await updateExtensionFromRepo({
+    currentFolder: 'NovelAI',
+    getRequestHeaders: () => ({ 'Content-Type': 'application/json', 'X-CSRF-Token': 'token' }),
+    fetchImpl: async (_path, options) => {
+      const body = JSON.parse(options.body);
+      scopes.push(body.global);
+      return body.global
+        ? new Response(JSON.stringify({ isUpToDate: true }), { status: 200 })
+        : new Response('Directory does not exist', { status: 404 });
+    },
+  });
+  assert.deepEqual(scopes, [false, true]);
+  assert.equal(result.global, true);
+  assert.equal(result.isUpToDate, true);
+});
+
+test('workspace replaces the upload prompt with loaded file state', () => {
+  const emptyHtml = renderWorkspace(createProject());
+  assert.match(emptyHtml, /点击或拖拽 TXT 文件到这里/);
+
+  const project = createProject('第一章\n正文', { name: '测试小说.txt', size: 18 });
+  project.chapters = [{ chapterId: 1, chapterName: '第一章', text: '第一章\n正文', charCount: 7, confirmed: true }];
+  const loadedHtml = renderWorkspace(project);
+  assert.doesNotMatch(loadedHtml, /点击或拖拽 TXT 文件到这里/);
+  assert.doesNotMatch(loadedHtml, /nai-source-text/);
+  assert.match(loadedHtml, /测试小说\.txt/);
+  assert.match(loadedHtml, /查看原文/);
+
+  const openedHtml = renderWorkspace(project, { openChapterId: 1 });
+  assert.match(openedHtml, /data-chapter-editor="1"/);
+  assert.match(openedHtml, /第一章\n正文/);
+  assert.match(openedHtml, /保存修改/);
 });
 
 test('clean preview/apply is exact and version-sensitive', () => {

@@ -2,6 +2,7 @@ import { EXTENSION_KEY } from '../../domain/constants.js';
 
 export class SillyTavernAdapter {
   getContext() { return globalThis.SillyTavern?.getContext?.() || {}; }
+  getRequestHeaders() { return this.getContext().getRequestHeaders?.() || { 'Content-Type': 'application/json' }; }
   on(eventName, handler) {
     const context = this.getContext();
     if (!context.eventSource?.on) return () => {};

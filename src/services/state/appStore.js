@@ -44,7 +44,7 @@ export class AppStore {
     const next = typeof mutator === 'function' ? createSnapshot(this.project, (draft) => Object.assign(draft, mutator(draft) || {})) : mutator;
     return this.replace(next);
   }
-  async importTxt(text) { return this.replace(createProject(text)); }
+  async importTxt(text, sourceFile = null) { return this.replace(createProject(text, sourceFile)); }
   async capture(pattern = this.project?.chapterRegex || DEFAULT_CHAPTER_REGEX) {
     const result = captureChapters(this.project.sourceText, pattern, this.project.sourceVersion);
     if (result.errors.length) return result;

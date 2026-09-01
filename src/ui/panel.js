@@ -3,6 +3,8 @@ import { renderOutline, renderOverview } from './views/storyView.js';
 import { renderSettings } from './views/settingsView.js';
 import { toCharacterCard, toProjectPackage, toSillyTavernWorldbook } from '../domain/worldbook/exportWorldbook.js';
 import { ensureDrawerLauncher, getExtensionFolderName } from './drawerLauncher.js';
+import { readImportFile } from '../services/files/readImportFile.js';
+import { NOVELAI_REPO_URL, updateExtensionFromRepo } from '../services/platform/extensionUpdater.js';
 
 const POSITION_VALUES = ['before_char', 'after_char', 'before_author', 'after_author', 'depth'];
 
@@ -17,6 +19,8 @@ export class NovelAiPanel {
     this.drawerRoot = null;
     this.tab = 'workspace';
     this.overviewChapterId = null;
+    this.openChapterId = null;
+    this.updateInProgress = false;
     this.unsubscribe = null;
   }
 
@@ -75,28 +79,30 @@ export class NovelAiPanel {
       ['settings', '&#9881; \u8bbe\u7f6e']
     ];
     const body = this.tab === 'workspace'
-      ? renderWorkspace(project || {})
+      ? renderWorkspace(project || {}, { openChapterId: this.openChapterId })
       : this.tab === 'outline'
         ? renderOutline(project || {})
         : this.tab === 'overview'
           ? renderOverview(project || {}, this.overviewChapterId || project?.runtime?.currentStage?.chapterId)
           : renderSettings(settings, { actor: this.settingsStore.getApiKey('actor'), director: this.settingsStore.getApiKey('director') });
-    this.root.innerHTML = `<div class="nai-app-header"><div class="nai-brand"><span class="nai-brand-icon">&#127917;</span><div><h2>NovelAI</h2><span>A1.2 · ${loadedLabel}</span></div></div><div class="nai-header-actions"><button class="nai-btn nai-btn-small" data-action="update-plugin">\u66f4\u65b0\u63d2\u4ef6</button><button class="nai-btn nai-btn-small nai-close" data-action="close-panel" aria-label="\u5173\u95ed">&times;</button></div></div><nav class="nai-tabs">${tabLabels.map(([key, label]) => `<button class="${this.tab === key ? 'active' : ''}" data-tab="${key}">${label}</button>`).join('')}</nav><main class="nai-content">${body}</main>`;
+    this.root.innerHTML = `<div class="nai-app-header"><div class="nai-brand"><span class="nai-brand-icon">&#127917;</span><div><h2>NovelAI</h2><span>A1.2 · ${loadedLabel}</span></div></div><div class="nai-header-actions"><button class="nai-btn nai-btn-small" data-action="update-plugin" ${this.updateInProgress ? 'disabled' : ''}>${this.updateInProgress ? '\u23f3 \u66f4\u65b0\u4e2d...' : '\u66f4\u65b0\u63d2\u4ef6'}</button><button class="nai-btn nai-btn-small nai-close" data-action="close-panel" aria-label="\u5173\u95ed">&times;</button></div></div><nav class="nai-tabs">${tabLabels.map(([key, label]) => `<button class="${this.tab === key ? 'active' : ''}" data-tab="${key}">${label}</button>`).join('')}</nav><main class="nai-content">${body}</main>`;
     this.root.querySelector('#nai-txt-file')?.addEventListener('change', (event) => this.readFile(event.target.files?.[0]));
   }
 
   async readFile(file) {
     if (!file) return;
     try {
-      const text = await file.text();
-      if (file.name.toLowerCase().endsWith('.json')) {
-        const parsed = JSON.parse(text);
+      const imported = await readImportFile(file);
+      if (imported.kind === 'json') {
+        const parsed = JSON.parse(imported.text);
         if (!parsed.schemaVersion && parsed.data?.character_book) throw new Error('\u8fd9\u662f\u89d2\u8272\u5361\u6587\u4ef6\uff0c\u8bf7\u4f7f\u7528\u4e16\u754c\u4e66/\u5de5\u7a0b\u5305\u5bfc\u5165');
+        this.openChapterId = null;
         await this.store.replace(parsed);
         this.notify('success', '\u5de5\u7a0b\u5305\u5bfc\u5165\u6210\u529f');
       } else {
-        await this.store.importTxt(text);
-        this.notify('success', `\u5df2\u5bfc\u5165 TXT\uff08${text.length.toLocaleString()} \u5b57\uff09`);
+        await this.store.importTxt(imported.text, { name: file.name, size: file.size, lastModified: file.lastModified, encoding: imported.encoding });
+        this.openChapterId = null;
+        this.notify('success', `\u5df2\u5bfc\u5165 TXT\uff08${imported.text.length.toLocaleString()} \u5b57\uff0c${imported.encoding}\uff09`);
       }
     } catch (error) {
       this.notify('error', error.message);
@@ -144,15 +150,14 @@ export class NovelAiPanel {
     try {
       if (action === 'close-panel') this.toggleDrawer(false);
       else if (action === 'choose-file') this.root.querySelector('#nai-txt-file')?.click();
-      else if (action === 'update-plugin') {
-        const repoUrl = 'https://github.com/lokenpee/NovelAI';
-        await this.updateSelfFromRepo(repoUrl);
-      }
+      else if (action === 'update-plugin') await this.updateSelfFromRepo();
       else if (action === 'capture') await this.capture();
       else if (action === 'preview-clean') await this.previewClean();
       else if (action === 'apply-clean') { const result = await this.store.applyCleanPreview(); this.notify('success', `\u5df2\u5220\u9664 ${result.deletedCount} \u5904\u91cd\u590d\u7247\u6bb5`); }
       else if (action === 'clean-impurities') await this.cleanImpurities();
-      else if (action === 'edit-chapter') await this.editChapter(Number(target.dataset.id));
+      else if (action === 'toggle-chapter-source') { const id = Number(target.dataset.id); this.openChapterId = this.openChapterId === id ? null : id; this.render(); }
+      else if (action === 'copy-chapter') await this.copyChapter(Number(target.dataset.id));
+      else if (action === 'save-chapter') await this.saveChapter(Number(target.dataset.id));
       else if (action === 'confirm-chapter') await this.store.confirmChapter(Number(target.dataset.id));
       else if (action === 'merge-chapter') { if (await this.adapter.confirm('\u5408\u5e76\u7ae0\u8282', '\u5408\u5e76\u540e\u9700\u91cd\u65b0\u786e\u8ba4\u53d7\u5f71\u54cd\u8d44\u4ea7\uff0c\u7ee7\u7eed\u5417\uff1f')) await this.store.mergeChapter(Number(target.dataset.id), target.dataset.direction === 'previous' ? 'previous' : 'next'); }
       else if (action === 'delete-selected-chapters') await this.deleteSelectedChapters();
@@ -160,6 +165,7 @@ export class NovelAiPanel {
       else if (action === 'import-project') this.root.querySelector('#nai-txt-file')?.click();
       else if (action === 'reset-project') {
         if (await this.adapter.confirm('清空当前项目', '这会清除当前正文、章节和世界书状态，立即返回空白工作台。继续吗？')) {
+          this.openChapterId = null;
           await this.store.resetProject();
           this.notify('info', '已返回空白项目状态');
         }
@@ -203,8 +209,7 @@ export class NovelAiPanel {
   }
 
   async capture() {
-    const source = this.root.querySelector('#nai-source-text')?.value || '';
-    if (source !== this.store.getProject()?.sourceText) await this.store.update((draft) => { draft.sourceText = source; draft.sourceVersion += 1; return draft; });
+    this.openChapterId = null;
     const result = await this.store.capture(this.root.querySelector('#nai-chapter-regex')?.value);
     const el = this.root.querySelector('#nai-capture-result');
     if (el) el.textContent = result.errors?.length ? `\u274c ${result.errors.join('\uff1b')}` : `\u2705 \u68c0\u6d4b\u5230 ${result.chapters.length} \u4e2a\u7ae0\u8282`;
@@ -218,7 +223,27 @@ export class NovelAiPanel {
 
   async cleanImpurities() { if (await this.adapter.confirm('\u5220\u9664\u6742\u8d28', '\u5c06\u5220\u9664\u7ae0\u8282\u5916\u5185\u5bb9\u53ca\u660e\u663e\u5e7f\u544a\uff0c\u7ee7\u7eed\u5417\uff1f')) { const result = await this.store.cleanImpurities(); this.notify('success', `\u5df2\u5904\u7406 ${result.removed.length} \u5904\u7591\u4f3c\u6742\u8d28`); } }
   async previewPrompt() { const { buildPromptPreview } = await import('../domain/worldbook/prompts.js'); await this.adapter.confirm('\u63d0\u793a\u8bcd\u9884\u89c8', buildPromptPreview(this.store.getProject().categoryConfigs).slice(0, 6000)); }
-  async editChapter(id) { const chapter = this.store.getProject().chapters.find((item) => item.chapterId === id); const name = prompt('\u7ae0\u8282\u540d\u79f0', chapter.chapterName); if (name === null) return; const text = prompt('\u7ae0\u8282\u6b63\u6587', chapter.text); if (text !== null) await this.store.editChapter(id, { chapterName: name, text }); }
+  async copyChapter(id) {
+    const chapter = this.store.getProject()?.chapters?.find((item) => item.chapterId === id);
+    if (!chapter) throw new Error('\u7ae0\u8282\u4e0d\u5b58\u5728');
+    if (!globalThis.navigator?.clipboard?.writeText) throw new Error('\u5f53\u524d\u73af\u5883\u4e0d\u652f\u6301\u526a\u8d34\u677f');
+    await globalThis.navigator.clipboard.writeText(chapter.text);
+    this.notify('success', '\u7ae0\u8282\u539f\u6587\u5df2\u590d\u5236');
+  }
+
+  async saveChapter(id) {
+    const chapter = this.store.getProject()?.chapters?.find((item) => item.chapterId === id);
+    if (!chapter) throw new Error('\u7ae0\u8282\u4e0d\u5b58\u5728');
+    const chapterName = this.root.querySelector(`[data-chapter-name="${id}"]`)?.value ?? chapter.chapterName;
+    const text = this.root.querySelector(`[data-chapter-editor="${id}"]`)?.value ?? chapter.text;
+    if (chapterName === chapter.chapterName && text === chapter.text) {
+      this.notify('info', '\u7ae0\u8282\u5185\u5bb9\u6ca1\u6709\u53d8\u5316');
+      return;
+    }
+    await this.store.editChapter(id, { chapterName, text });
+    this.openChapterId = id;
+    this.notify('success', '\u7ae0\u8282\u4fee\u6539\u5df2\u4fdd\u5b58');
+  }
   async deleteSelectedChapters() { const ids = this.selectedChapters(); if (ids.length && await this.adapter.confirm('\u5220\u9664\u7ae0\u8282', `\u786e\u8ba4\u5220\u9664 ${ids.length} \u4e2a\u7ae0\u8282\uff1f`)) await this.store.deleteChapter(ids); }
   selectedEntries() { return [...this.root.querySelectorAll('[data-select-entry]:checked')].map((el) => el.dataset.selectEntry); }
   selectedChapters() { return [...this.root.querySelectorAll('[data-select-chapter]:checked')].map((el) => Number(el.dataset.selectChapter)); }
@@ -247,118 +272,31 @@ export class NovelAiPanel {
     if (el.dataset.apiKey) this.settingsStore.setApiKey(el.dataset.apiKey, el.value);
   }
 
-  async updateSelfFromRepo(repoUrl) {
-    const normalizedRepoUrl = normalizeRepoUrl(repoUrl);
-    if (!normalizedRepoUrl) {
-      this.notify('error', '仓库地址无效，无法更新插件');
-      return;
-    }
-
-    const currentFolder = getExtensionFolderName();
-    const repoFolder = getRepoFolderName(normalizedRepoUrl);
-    const candidateFolders = [...new Set([currentFolder, repoFolder, 'NovelAI', 'StoryWeaver'].filter(Boolean))];
-
-    for (const folder of candidateFolders) {
-      const { response, text, data } = await updateExtensionByName(folder);
-      if (response.ok) {
-        this.notify('success', `已更新插件 ${folder}，将重新加载 SillyTavern`);
-        if (typeof window !== 'undefined' && typeof window.location?.reload === 'function') {
-          setTimeout(() => window.location.reload(), 500);
-        }
+  async updateSelfFromRepo() {
+    if (this.updateInProgress) return;
+    this.updateInProgress = true;
+    this.render();
+    try {
+      const result = await updateExtensionFromRepo({
+        repoUrl: NOVELAI_REPO_URL,
+        currentFolder: getExtensionFolderName(),
+        getRequestHeaders: () => this.adapter.getRequestHeaders(),
+      });
+      if (result.mode === 'install') {
+        this.notify('success', '插件安装完成，将重新加载 SillyTavern');
+      } else if (result.isUpToDate) {
+        this.notify('success', '插件已是最新版本');
         return;
+      } else {
+        const commit = result.shortCommitHash ? `（${result.shortCommitHash}）` : '';
+        this.notify('success', `插件更新成功${commit}，将重新加载 SillyTavern`);
       }
-      if (response.status !== 404) {
-        const detail = extractApiErrorDetail(response, text, data);
-        this.notify('error', `更新失败：${detail}`);
-        return;
-      }
-    }
-
-    const installResult = await installExtensionFromRepo(normalizedRepoUrl);
-    if (installResult.response.ok) {
-      this.notify('success', '已从仓库安装最新扩展，建议立刻刷新 SillyTavern');
       if (typeof window !== 'undefined' && typeof window.location?.reload === 'function') {
-        setTimeout(() => window.location.reload(), 500);
+        setTimeout(() => window.location.reload(), 700);
       }
-      return;
-    }
-
-    const detail = extractApiErrorDetail(installResult.response, installResult.text, installResult.data);
-    this.notify('error', `安装失败：${detail}`);
-  }
-}
-
-function normalizeRepoUrl(repoUrl) {
-  const raw = String(repoUrl || '').trim();
-  if (!raw) return '';
-  try {
-    const url = new URL(raw);
-    if (!['https:', 'http:'].includes(url.protocol)) return '';
-    url.hash = '';
-    url.search = '';
-    return url.toString().replace(/\/$/, '');
-  } catch {
-    return '';
-  }
-}
-
-function getRepoFolderName(repoUrl) {
-  try {
-    const url = new URL(repoUrl);
-    const segments = url.pathname.split('/').filter(Boolean);
-    if (!segments.length) return '';
-    return decodeURIComponent(segments[segments.length - 1]).replace(/\.git$/i, '');
-  } catch {
-    return '';
-  }
-}
-
-async function updateExtensionByName(extensionFolder) {
-  const response = await fetch('/api/extensions/update', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ extensionName: extensionFolder, global: false }),
-  });
-
-  let text = '';
-  try { text = await response.text(); } catch { text = ''; }
-
-  let data = null;
-  if (text) {
-    try { data = JSON.parse(text); } catch { data = null; }
-  }
-
-  return { response, text, data };
-}
-
-async function installExtensionFromRepo(repoUrl) {
-  const response = await fetch('/api/extensions/install', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url: repoUrl, global: false, branch: '' }),
-  });
-
-  let text = '';
-  try { text = await response.text(); } catch { text = ''; }
-
-  let data = null;
-  if (text) {
-    try { data = JSON.parse(text); } catch { data = null; }
-  }
-
-  return { response, text, data };
-}
-
-function extractApiErrorDetail(response, text, data) {
-  if (data && typeof data === 'object') {
-    const candidates = [data.message, data.error, data.detail, data.msg, data.cause];
-    for (const value of candidates) {
-      const normalized = String(value || '').trim();
-      if (normalized) return normalized;
+    } finally {
+      this.updateInProgress = false;
+      this.render();
     }
   }
-
-  const normalizedText = String(text || '').trim();
-  if (normalizedText) return normalizedText;
-  return response?.statusText || `HTTP ${response?.status || 'unknown'}`;
 }
