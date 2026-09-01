@@ -7,15 +7,25 @@ export class ProjectStore {
 
   async load() {
     let value;
-    if (this.adapter.localforage) value = await this.adapter.localforage.getItem(PROJECT_STORAGE_KEY);
-    else if (typeof localStorage !== 'undefined') value = JSON.parse(localStorage.getItem(PROJECT_STORAGE_KEY) || 'null');
-    else value = this.memory;
+    try {
+      if (this.adapter.localforage) value = await this.adapter.localforage.getItem(PROJECT_STORAGE_KEY);
+      else if (typeof localStorage !== 'undefined') value = JSON.parse(localStorage.getItem(PROJECT_STORAGE_KEY) || 'null');
+      else value = this.memory;
+    } catch {
+      await this.clear();
+      return null;
+    }
     if (!value) return null;
-    const project = migrateProject(value);
-    const errors = validateProject(project);
-    if (errors.length) throw new Error(`已保存工程包损坏: ${errors.join('；')}`);
-    this.memory = clone(project);
-    return clone(project);
+    try {
+      const project = migrateProject(value);
+      const errors = validateProject(project);
+      if (errors.length) throw new Error(`已保存工程包损坏: ${errors.join('；')}`);
+      this.memory = clone(project);
+      return clone(project);
+    } catch {
+      await this.clear();
+      return null;
+    }
   }
 
   async save(project) {

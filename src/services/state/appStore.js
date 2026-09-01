@@ -12,9 +12,32 @@ import { invalidateChapterAssets } from '../../domain/project/invalidateChapterA
 
 export class AppStore {
   constructor({ projectStore, apiRouter, settingsStore, logger } = {}) { this.projectStore = projectStore; this.apiRouter = apiRouter; this.settingsStore = settingsStore; this.logger = logger; this.project = null; this.listeners = new Set(); this.cleanPreview = null; this.activeJobController = null; }
-  async init() { this.project = await this.projectStore.load(); return this.project; }
+  async init() {
+    let saved = null;
+    try { saved = await this.projectStore.load(); } catch {
+      saved = null;
+    }
+    const hasMeaningfulProjectData = !!saved && (String(saved.sourceText || '').trim() || (saved.chapters || []).length || (saved.worldbookEntries || []).length || (saved.beatAssets || []).length);
+    if (saved && !hasMeaningfulProjectData) {
+      this.project = { ...saved, sourceText: '', chapters: [], worldbookEntries: [], beatAssets: [], runtime: { ...(saved.runtime || {}), currentStage: null }, processing: { ...(saved.processing || {}), overall: 'pending' } };
+      try { await this.projectStore.save(this.project); } catch { /* keep a clean blank project in memory */ }
+      return this.project;
+    }
+    this.project = hasMeaningfulProjectData ? saved : createProject();
+    if (!saved || !hasMeaningfulProjectData) {
+      try { await this.projectStore.save(this.project); } catch { /* keep a clean blank project in memory */ }
+    }
+    return this.project;
+  }
   subscribe(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
   getProject() { return this.project; }
+  async resetProject() {
+    const next = createProject();
+    this.project = next;
+    try { await this.projectStore.clear(); await this.projectStore.save(next); } catch { /* keep a clean blank project in memory */ }
+    this.listeners.forEach((listener) => listener(this.project));
+    return this.project;
+  }
   async replace(project) { const migrated = migrateProject(project); this.project = clone(migrated); await this.projectStore.save(this.project); this.listeners.forEach((listener) => listener(this.project)); return this.project; }
   async update(mutator) {
     if (!this.project) throw new Error('尚未导入小说或工程包');

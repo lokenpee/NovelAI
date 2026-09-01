@@ -176,3 +176,27 @@ test('project migration restores optional collections without pretending complet
   const migrated = migrateProject({ projectId: 'old', sourceText: '正文', schemaVersion: 1, version: 2, chapters: [] });
   assert.deepEqual(migrated.worldbookEntries, []); assert.deepEqual(migrated.beatAssets, []); assert.equal(migrated.processing.overall, 'pending'); assert.equal(migrated.runtime.currentStage, null);
 });
+
+test('corrupted persisted project falls back to a clean blank project', async () => {
+  const projectStore = { load: async () => { throw new Error('storage invalid'); }, save: async () => {}, clear: async () => {} };
+  const settingsStore = { load: () => ({ enabled: true, maxConcurrency: 1 }), getApiKey: () => '' };
+  const { AppStore } = await import('../src/services/state/appStore.js');
+  const appStore = new AppStore({ projectStore, settingsStore });
+  const project = await appStore.init();
+  assert.equal(project.sourceText, '');
+  assert.deepEqual(project.chapters, []);
+  assert.deepEqual(project.beatAssets, []);
+});
+
+test('blank project is treated as not loaded until real source data exists', async () => {
+  const saved = createProject('');
+  const projectStore = { load: async () => saved, save: async () => saved, clear: async () => {} };
+  const settingsStore = { load: () => ({ enabled: true, maxConcurrency: 1 }), getApiKey: () => '' };
+  const { AppStore } = await import('../src/services/state/appStore.js');
+  const appStore = new AppStore({ projectStore, settingsStore });
+  const project = await appStore.init();
+  assert.equal(project.sourceText, '');
+  assert.equal(project.projectId, saved.projectId);
+  assert.equal(project.chapters.length, 0);
+  assert.equal(project.beatAssets.length, 0);
+});

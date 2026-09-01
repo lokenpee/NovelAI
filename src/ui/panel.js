@@ -75,7 +75,8 @@ export class NovelAiPanel {
     if (!this.root) return;
     const project = this.store.getProject();
     const settings = this.settingsStore.load();
-    const loadedLabel = project ? '\u9879\u76ee\u5df2\u8f7d\u5165' : '\u7b49\u5f85\u5bfc\u5165\u5c0f\u8bf4';
+    const hasProjectData = !!project && (String(project.sourceText || '').trim() || (project.chapters || []).length || (project.worldbookEntries || []).length || (project.beatAssets || []).length);
+    const loadedLabel = hasProjectData ? '项目已载入' : '等待导入小说';
     const tabLabels = [
       ['workspace', '&#128218; TXT\u8f6c\u4e16\u754c\u4e66'],
       ['outline', '&#129517; \u6545\u4e8b\u5927\u7eb2'],
@@ -89,7 +90,7 @@ export class NovelAiPanel {
         : this.tab === 'overview'
           ? renderOverview(project || {}, this.overviewChapterId || project?.runtime?.currentStage?.chapterId)
           : renderSettings(settings, { actor: this.settingsStore.getApiKey('actor'), director: this.settingsStore.getApiKey('director') });
-    this.root.innerHTML = `<div class="nai-app-header"><div class="nai-brand"><span class="nai-brand-icon">&#127917;</span><div><h2>NovelAI</h2><span>Version 1.1 · ${loadedLabel}</span></div></div><div class="nai-header-actions"><button class="nai-btn nai-btn-small" data-action="update-plugin">\u66f4\u65b0\u63d2\u4ef6</button><button class="nai-btn nai-btn-small nai-close" data-action="close-panel" aria-label="\u5173\u95ed">&times;</button></div></div><nav class="nai-tabs">${tabLabels.map(([key, label]) => `<button class="${this.tab === key ? 'active' : ''}" data-tab="${key}">${label}</button>`).join('')}</nav><main class="nai-content">${body}</main>`;
+    this.root.innerHTML = `<div class="nai-app-header"><div class="nai-brand"><span class="nai-brand-icon">&#127917;</span><div><h2>NovelAI</h2><span>A1.2 · ${loadedLabel}</span></div></div><div class="nai-header-actions"><button class="nai-btn nai-btn-small" data-action="update-plugin">\u66f4\u65b0\u63d2\u4ef6</button><button class="nai-btn nai-btn-small nai-close" data-action="close-panel" aria-label="\u5173\u95ed">&times;</button></div></div><nav class="nai-tabs">${tabLabels.map(([key, label]) => `<button class="${this.tab === key ? 'active' : ''}" data-tab="${key}">${label}</button>`).join('')}</nav><main class="nai-content">${body}</main>`;
     this.root.querySelector('#nai-txt-file')?.addEventListener('change', (event) => this.readFile(event.target.files?.[0]));
   }
 
@@ -162,6 +163,12 @@ export class NovelAiPanel {
       else if (action === 'delete-selected-chapters') await this.deleteSelectedChapters();
       else if (action === 'export-project') this.adapter.downloadJson(`novelai-project-${Date.now()}.json`, toProjectPackage(this.store.getProject()));
       else if (action === 'import-project') this.root.querySelector('#nai-txt-file')?.click();
+      else if (action === 'reset-project') {
+        if (await this.adapter.confirm('清空当前项目', '这会清除当前正文、章节和世界书状态，立即返回空白工作台。继续吗？')) {
+          await this.store.resetProject();
+          this.notify('info', '已返回空白项目状态');
+        }
+      }
       else if (action === 'preview-prompt') await this.previewPrompt();
       else if (action === 'extract-worldbook') { await this.store.runWorldbook(); this.notify('success', '\u4e16\u754c\u4e66\u63d0\u53d6\u5b8c\u6210'); }
       else if (action === 'cancel-job') { this.store.cancelActiveJob(); this.notify('info', '\u5df2\u8bf7\u6c42\u53d6\u6d88\uff0c\u5df2\u5b8c\u6210\u7ae0\u8282\u4f1a\u4fdd\u7559'); }
