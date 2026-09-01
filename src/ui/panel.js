@@ -13,6 +13,7 @@ export class NovelAiPanel {
     this.adapter = adapter;
     this.logger = logger;
     this.root = null;
+    this.drawerRoot = null;
     this.tab = 'workspace';
     this.overviewChapterId = null;
     this.unsubscribe = null;
@@ -20,11 +21,10 @@ export class NovelAiPanel {
 
   async mount() {
     if (this.root || typeof document === 'undefined') return;
-    await this.mountDrawerTemplate();
+    const drawer = await this.ensureDrawer();
     this.root = document.createElement('div');
     this.root.id = 'novelai-panel';
     this.root.className = 'novelai-panel';
-    const drawer = document.querySelector('#novelai-wrapper');
     if (!drawer) this.root.classList.add('openDrawer');
     const target = drawer || document.querySelector('#extensions_settings2') || document.querySelector('#extensions_settings') || document.body;
     target.appendChild(this.root);
@@ -52,10 +52,17 @@ export class NovelAiPanel {
     this.unsubscribe = null;
     this.root?.remove();
     this.root = null;
+    this.drawerRoot?.remove();
+    this.drawerRoot = null;
   }
 
-  async mountDrawerTemplate() {
-    if (document.querySelector('#novelai-wrapper')) return;
+  async ensureDrawer() {
+    const existingWrapper = document.querySelector('#novelai-wrapper');
+    if (existingWrapper && existingWrapper.querySelector('#novelai-icon')) {
+      this.drawerRoot = existingWrapper;
+      return existingWrapper;
+    }
+
     const folder = getExtensionFolderName();
     let html = '';
     try {
@@ -66,9 +73,22 @@ export class NovelAiPanel {
     if (!html || !String(html).trim()) {
       html = '<div id="novelai-wrapper" class="drawer"><div class="drawer-toggle" title="NovelAI" role="button" tabindex="0"><div id="novelai-icon" class="drawer-icon fa-solid fa-clapperboard fa-fw interactable" aria-label="NovelAI"></div></div></div>';
     }
+
+    if (existingWrapper) {
+      existingWrapper.innerHTML = html;
+      this.drawerRoot = existingWrapper;
+      return existingWrapper;
+    }
+
     const anchor = document.querySelector('#extensions-settings-button');
-    if (anchor) anchor.insertAdjacentHTML('afterend', html);
-    else (document.querySelector('#extensions_settings2') || document.body).insertAdjacentHTML('beforeend', html);
+    const container = anchor ? anchor.parentElement : (document.querySelector('#extensions_settings2') || document.body);
+    if (anchor) {
+      container.insertAdjacentHTML('afterend', html);
+    } else {
+      container.insertAdjacentHTML('beforeend', html);
+    }
+    this.drawerRoot = document.querySelector('#novelai-wrapper');
+    return this.drawerRoot;
   }
 
   render() {
@@ -132,6 +152,7 @@ export class NovelAiPanel {
   notify(type, message) { this.adapter.notify(type, message); }
 
   toggleDrawer(force) {
+    if (!this.root) return;
     const drawer = document.querySelector('#novelai-wrapper');
     const open = force === undefined ? !this.root.classList.contains('openDrawer') : force;
     this.root.classList.toggle('openDrawer', open);
