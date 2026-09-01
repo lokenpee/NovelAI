@@ -88,6 +88,16 @@
 .nai-setting-hint, .nai-feedback { color:var(--nai-text-3); font-size:12px; line-height:1.55; }
 .nai-feedback { margin-top:7px; }
 .nai-empty { padding:24px 12px; color:var(--nai-text-3); text-align:center; font-size:12px; }
+.nai-clean-results { margin-top:10px; padding:11px 12px; color:var(--nai-text-2); background:rgba(0,0,0,.2); border:1px solid var(--nai-border); border-radius:7px; font-size:12px; }
+.nai-clean-summary { display:flex; flex-direction:column; gap:4px; color:var(--nai-success); }
+.nai-clean-summary > span { color:var(--nai-text-3); font-size:11px; }
+.nai-clean-summary.is-empty { color:var(--nai-text-3); }
+.nai-clean-stat-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:10px; }
+.nai-clean-stat-grid b { color:var(--nai-text); }
+.nai-clean-stat-grid ul, .nai-clean-samples ul { margin:5px 0 0 18px; padding:0; line-height:1.7; }
+.nai-clean-samples { margin-top:8px; }
+.nai-clean-samples summary { cursor:pointer; color:var(--nai-accent-hi); }
+.nai-clean-samples li span { margin-right:8px; color:var(--nai-text-3); }
 
 .nai-queue-summary { display:flex; align-items:center; flex-wrap:wrap; gap:10px; padding-bottom:10px; color:var(--nai-text-2); font-size:12px; }
 .nai-queue-summary button { margin-left:auto; }
@@ -178,11 +188,19 @@ fieldset { min-width:0; padding:11px; border:1px solid var(--nai-border); border
 fieldset legend { padding:0 5px; color:var(--nai-text-2); font-size:13px; }
 fieldset label:not(.nai-switch) { display:block; margin:8px 0; color:var(--nai-text-3); font-size:11px; }
 fieldset label input, fieldset label select { margin-top:4px; }
+.nai-settings-notice { margin:10px 0; padding:9px 10px; color:var(--nai-text-2); background:rgba(37,99,235,.1); border:1px solid rgba(59,130,246,.25); border-radius:6px; font-size:12px; line-height:1.5; }
+.nai-settings-footer { display:flex; align-items:center; justify-content:flex-end; gap:10px; margin-top:12px; padding-top:12px; border-top:1px solid var(--nai-border); }
+.nai-model-status { min-height:18px; margin-top:7px; color:var(--nai-text-3); font-size:11px; line-height:1.5; }
+.nai-model-status.loading { color:var(--nai-warning); }
+.nai-model-status.success { color:var(--nai-success); }
+.nai-model-status.error { color:#ff7b72; }
+.nai-model-status.info { color:var(--nai-accent-hi); }
 
 @media (max-width:680px) {
   #novelai-panel { inset:8px 2vw auto; width:96vw; max-height:calc(100dvh - 16px); }
   .nai-tabs { overflow-x:auto; flex-wrap:nowrap; }
   .nai-grid-2 { grid-template-columns:1fr; }
+  .nai-clean-stat-grid { grid-template-columns:1fr; }
   .nai-loaded-file { align-items:flex-start; flex-wrap:wrap; }
   .nai-loaded-file-actions { width:100%; }
   .nai-loaded-file-actions .nai-btn { flex:1; }

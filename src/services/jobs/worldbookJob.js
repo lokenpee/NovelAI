@@ -10,7 +10,7 @@ export async function runWorldbookJob(project, { apiRouter, concurrency = 1, onP
   const semaphore = new Semaphore(concurrency);
   let entries = structuredClone(project.worldbookEntries || []);
   const results = [];
-  const chapters = project.chapters.filter((chapter) => project.processing?.worldbook?.[chapter.chapterId]?.status !== PROCESS_STATUS.SUCCEEDED);
+  const chapters = project.chapters.filter((chapter) => chapter.confirmed && project.processing?.worldbook?.[chapter.chapterId]?.status !== PROCESS_STATUS.SUCCEEDED);
   await Promise.all(chapters.map(async (chapter) => {
     let release = null;
     try {

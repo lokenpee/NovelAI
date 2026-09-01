@@ -29,6 +29,11 @@ import { renderWorkspace } from '../src/ui/views/workspaceView.js';
 import { readImportFile } from '../src/services/files/readImportFile.js';
 import { formatBytes } from '../src/utils/html.js';
 import { updateExtensionFromRepo } from '../src/services/platform/extensionUpdater.js';
+import { summarizeCleanPreview } from '../src/domain/text/summarizeCleanPreview.js';
+import { renderCleanPreviewSummary } from '../src/ui/views/cleanPreviewView.js';
+import { renderWorldbook } from '../src/ui/views/worldbookView.js';
+import { renderSettings } from '../src/ui/views/settingsView.js';
+import { NovelAiPanel } from '../src/ui/panel.js';
 
 test('drawer launcher is mounted after the SillyTavern extensions button', () => {
   const wrapper = { id: 'novelai-wrapper' };
@@ -118,6 +123,120 @@ test('workspace replaces the upload prompt with loaded file state', () => {
   assert.match(openedHtml, /data-chapter-editor="1"/);
   assert.match(openedHtml, /第一章\n正文/);
   assert.match(openedHtml, /保存修改/);
+});
+
+test('clean preview summary restores chapter and segment statistics', () => {
+  const source = '第一章\n广告\n正文\n第二章\n广告\n广告';
+  const preview = previewClean(source, '广告');
+  const summary = summarizeCleanPreview(preview, { sourceText: source, chapters: [
+    { chapterId: 1, chapterName: '第一章', text: '第一章\n广告\n正文' },
+    { chapterId: 2, chapterName: '第二章', text: '第二章\n广告\n广告' },
+  ] });
+  assert.equal(summary.totalHits, 3);
+  assert.equal(summary.chapterStats.length, 2);
+  assert.equal(summary.chapterStats[1].hits, 2);
+  const html = renderCleanPreviewSummary(summary);
+  assert.match(html, /涉及 2 章/);
+  assert.match(html, /片段统计/);
+  assert.match(html, /命中上下文/);
+});
+
+test('worldbook controls expose prompt editing without the misleading settings gear', () => {
+  const project = createProject('正文');
+  project.chapters = [{ chapterId: 1, chapterName: '第一章', text: '正文', confirmed: true }];
+  const closed = renderWorldbook(project);
+  assert.match(closed, /编辑提示词/);
+  assert.doesNotMatch(closed, /edit-category/);
+  assert.doesNotMatch(closed, /⚙️/);
+  const opened = renderWorldbook(project, { openCategoryIds: new Set(['character']) });
+  assert.match(opened, /data-category-prompt="character"/);
+});
+
+test('panel render preserves workspace scroll position during local interactions', () => {
+  let content = { scrollTop: 420 };
+  const root = {
+    querySelector(selector) { return selector === '.nai-content' ? content : null; },
+    set innerHTML(_value) { content = { scrollTop: 0 }; },
+  };
+  const project = createProject();
+  const panel = new NovelAiPanel({
+    store: { getProject: () => project, isJobRunning: () => false },
+    settingsStore: { load: () => ({ enabled: true, actor: {}, director: {} }), getApiKey: () => '' },
+    apiRouter: {}, adapter: {}, logger: {},
+  });
+  panel.root = root;
+  panel.render();
+  assert.equal(content.scrollTop, 420);
+});
+
+test('settings view exposes visible status targets for every functional button', () => {
+  const html = renderSettings({ enabled: true, useTavernApi: false, maxConcurrency: 1, actor: {}, director: {} });
+  assert.match(html, /data-action="save-settings"/);
+  assert.match(html, /data-action="list-models" data-role="actor"/);
+  assert.match(html, /data-action="test-api" data-role="director"/);
+  assert.match(html, /data-model-status="actor"/);
+  assert.match(html, /data-model-select="director"/);
+});
+
+test('quick API test saves the current form before sending the request', async () => {
+  const settings = { enabled: true, useTavernApi: false, maxConcurrency: 1, actor: {}, director: {} };
+  let saved = null;
+  const modelStatus = { textContent: '', className: '' };
+  const settingsStatus = { textContent: '', className: '' };
+  const values = new Map([
+    ['#nai-enabled', { checked: true }],
+    ['#nai-use-tavern', { checked: false }],
+    ['#nai-concurrency', { value: '2' }],
+    ['[data-api="actor"][data-key="model"]', { value: 'new-model' }],
+    ['[data-model-status="actor"]', modelStatus],
+    ['#nai-settings-status', settingsStatus],
+  ]);
+  const panel = new NovelAiPanel({
+    store: {},
+    settingsStore: { load: () => settings, setApiKey: () => {}, save: (value) => { saved = structuredClone(value); } },
+    apiRouter: { generate: async () => { assert.equal(saved.actor.model, 'new-model'); return { text: 'OK' }; } },
+    adapter: {}, logger: {},
+  });
+  panel.root = { querySelector: (selector) => values.get(selector) || null };
+  const button = { disabled: false, textContent: '⚡ 快速测试' };
+  await panel.testApi('actor', button);
+  assert.equal(saved.maxConcurrency, 2);
+  assert.match(modelStatus.textContent, /测试成功/);
+  assert.equal(button.disabled, false);
+});
+
+test('model list button saves form values and fills a visible selector', async () => {
+  const settings = { enabled: true, useTavernApi: false, maxConcurrency: 1, actor: {}, director: {} };
+  let saved = null;
+  const options = [];
+  const select = { innerHTML: '', appendChild: (option) => options.push(option) };
+  const wrap = { hidden: true };
+  const status = { textContent: '', className: '' };
+  const values = new Map([
+    ['#nai-enabled', { checked: true }],
+    ['#nai-use-tavern', { checked: false }],
+    ['#nai-concurrency', { value: '1' }],
+    ['[data-api="actor"][data-key="endpoint"]', { value: 'https://example.test/v1' }],
+    ['[data-model-select="actor"]', select],
+    ['[data-model-select-wrap="actor"]', wrap],
+    ['[data-model-status="actor"]', status],
+    ['#nai-settings-status', { textContent: '', className: '' }],
+  ]);
+  const panel = new NovelAiPanel({
+    store: {},
+    settingsStore: { load: () => settings, setApiKey: () => {}, save: (value) => { saved = structuredClone(value); } },
+    apiRouter: { listModels: async () => { assert.equal(saved.actor.endpoint, 'https://example.test/v1'); return ['model-a', 'model-b']; } },
+    adapter: {}, logger: {},
+  });
+  panel.root = {
+    ownerDocument: { createElement: () => ({ value: '', textContent: '' }) },
+    querySelector: (selector) => values.get(selector) || null,
+  };
+  const button = { disabled: false, textContent: '🔄 拉取模型' };
+  await panel.listModels('actor', button);
+  assert.equal(wrap.hidden, false);
+  assert.deepEqual(options.map((option) => option.value), ['model-a', 'model-b']);
+  assert.match(status.textContent, /找到 2 个模型/);
 });
 
 test('clean preview/apply is exact and version-sensitive', () => {

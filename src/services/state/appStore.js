@@ -61,6 +61,8 @@ export class AppStore {
   async runWorldbook(options = {}) {
     if (this.settingsStore.load().enabled === false) throw new Error('插件总开关已关闭，不能启动世界书任务');
     if (this.activeJobController) throw new Error('已有模型任务正在执行');
+    if (!this.project.chapters.some((chapter) => chapter.confirmed)) throw new Error('没有已确认章节，请先检查章节队列');
+    if (!this.project.categoryConfigs.some((category) => category.enabled)) throw new Error('请至少启用一个世界书分类');
     const controller = new AbortController(); this.activeJobController = controller;
     try { const base = clone(this.project); const result = await runWorldbookJob(base, { apiRouter: this.apiRouter, concurrency: this.settingsStore.load().maxConcurrency, ...options, signal: options.signal || controller.signal, onProgress: (id, status, error) => { this.project.processing.worldbook[id] = { status, error: error?.message || null, updatedAt: Date.now() }; this.projectStore.save(this.project).catch(() => {}); this.listeners.forEach((listener) => listener(this.project)); } });
       if (this.project.version !== result.baseVersion) throw new Error('项目在任务期间发生变化，已丢弃旧世界书结果，请重新执行');
@@ -77,7 +79,8 @@ export class AppStore {
     } finally { if (this.activeJobController === controller) this.activeJobController = null; }
   }
   async rerollBeat(chapterId, options = {}) { return this.runBeats({ ...options, chapterIds: [chapterId], force: true }); }
-  cancelActiveJob() { this.activeJobController?.abort(); }
+  isJobRunning() { return !!this.activeJobController; }
+  cancelActiveJob() { if (!this.activeJobController) return false; this.activeJobController.abort(); return true; }
   async setStage(next, reason) { return this.update((draft) => { draft.runtime = setStage(draft.runtime, draft.beatAssets, next, reason); return draft; }); }
   async startChapter(chapterId) { return this.update((draft) => { draft.runtime = startFromChapter(draft.runtime, draft.beatAssets, chapterId); return draft; }); }
   async shiftBeat(direction) { return this.update((draft) => { draft.runtime = moveBeat(draft.runtime, draft.beatAssets, direction); return draft; }); }
