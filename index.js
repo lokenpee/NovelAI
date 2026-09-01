@@ -42,7 +42,7 @@ export async function onActivate() {
   disposers.push(adapter.on('CHAT_CHANGED', () => { runtime.onChatChanged(); return restoreChatState(); }));
   disposers.push(adapter.on('APP_INITIALIZED', () => initializeAsync({ mount: true }).catch((error) => logger.error('UI 挂载失败', { error: error.message }))));
   disposers.push(adapter.on('APP_READY', () => initializeAsync({ mount: true }).catch((error) => logger.error('异步初始化失败', { error: error.message }))));
-  await initializeAsync();
+  await initializeAsync({ mount: true });
 }
 
 export function onDisable() {
