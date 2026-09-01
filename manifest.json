@@ -6,6 +6,7 @@
   "html": "drawer-component.html",
   "author": "NovelAI",
   "version": "0.1.0",
+  "homePage": "https://github.com/lokenpee/NovelAI",
   "description": "TXT to worldbook, beat planning and director-actor runtime for SillyTavern",
   "minimum_client_version": "1.12.0",
   "generate_interceptor": "novelAiGenerateInterceptor",

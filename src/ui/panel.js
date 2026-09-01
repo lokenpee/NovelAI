@@ -152,7 +152,10 @@ export class NovelAiPanel {
     try {
       if (action === 'close-panel') this.toggleDrawer(false);
       else if (action === 'choose-file') this.root.querySelector('#nai-txt-file')?.click();
-      else if (action === 'update-plugin') this.notify('info', '\u8bf7\u5728 SillyTavern \u6269\u5c55\u7ba1\u7406\u5668\u4e2d\u66f4\u65b0 NovelAI');
+      else if (action === 'update-plugin') {
+        const repoUrl = 'https://github.com/lokenpee/NovelAI';
+        await this.updateSelfFromRepo(repoUrl);
+      }
       else if (action === 'capture') await this.capture();
       else if (action === 'preview-clean') await this.previewClean();
       else if (action === 'apply-clean') { const result = await this.store.applyCleanPreview(); this.notify('success', `\u5df2\u5220\u9664 ${result.deletedCount} \u5904\u91cd\u590d\u7247\u6bb5`); }
@@ -253,7 +256,123 @@ export class NovelAiPanel {
   }
 }
 
+async updateSelfFromRepo(repoUrl) {
+    const normalizedRepoUrl = normalizeRepoUrl(repoUrl);
+    if (!normalizedRepoUrl) {
+      this.notify('error', '仓库地址无效，无法更新插件');
+      return;
+    }
+
+    const currentFolder = getExtensionFolderName();
+    const repoFolder = getRepoFolderName(normalizedRepoUrl);
+    const candidateFolders = [...new Set([currentFolder, repoFolder, 'NovelAI', 'StoryWeaver'].filter(Boolean))];
+
+    for (const folder of candidateFolders) {
+      const { response, text, data } = await updateExtensionByName(folder);
+      if (response.ok) {
+        this.notify('success', `已更新插件 ${folder}，将重新加载 SillyTavern`);
+        if (typeof window !== 'undefined' && typeof window.location?.reload === 'function') {
+          setTimeout(() => window.location.reload(), 500);
+        }
+        return;
+      }
+      if (response.status !== 404) {
+        const detail = extractApiErrorDetail(response, text, data);
+        this.notify('error', `更新失败：${detail}`);
+        return;
+      }
+    }
+
+    const installResult = await installExtensionFromRepo(normalizedRepoUrl);
+    if (installResult.response.ok) {
+      this.notify('success', '已从仓库安装最新扩展，建议立刻刷新 SillyTavern');
+      if (typeof window !== 'undefined' && typeof window.location?.reload === 'function') {
+        setTimeout(() => window.location.reload(), 500);
+      }
+      return;
+    }
+
+    const detail = extractApiErrorDetail(installResult.response, installResult.text, installResult.data);
+    this.notify('error', `安装失败：${detail}`);
+  }
+}
+
 function getExtensionFolderName() {
   const match = /\/scripts\/extensions\/third-party\/([^/]+)\//.exec(import.meta.url);
   return match?.[1] ? decodeURIComponent(match[1]) : 'NovelAI';
+}
+
+function normalizeRepoUrl(repoUrl) {
+  const raw = String(repoUrl || '').trim();
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    if (!['https:', 'http:'].includes(url.protocol)) return '';
+    url.hash = '';
+    url.search = '';
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return '';
+  }
+}
+
+function getRepoFolderName(repoUrl) {
+  try {
+    const url = new URL(repoUrl);
+    const segments = url.pathname.split('/').filter(Boolean);
+    if (!segments.length) return '';
+    return decodeURIComponent(segments[segments.length - 1]).replace(/\.git$/i, '');
+  } catch {
+    return '';
+  }
+}
+
+async function updateExtensionByName(extensionFolder) {
+  const response = await fetch('/api/extensions/update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ extensionName: extensionFolder, global: false }),
+  });
+
+  let text = '';
+  try { text = await response.text(); } catch { text = ''; }
+
+  let data = null;
+  if (text) {
+    try { data = JSON.parse(text); } catch { data = null; }
+  }
+
+  return { response, text, data };
+}
+
+async function installExtensionFromRepo(repoUrl) {
+  const response = await fetch('/api/extensions/install', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: repoUrl, global: false, branch: '' }),
+  });
+
+  let text = '';
+  try { text = await response.text(); } catch { text = ''; }
+
+  let data = null;
+  if (text) {
+    try { data = JSON.parse(text); } catch { data = null; }
+  }
+
+  return { response, text, data };
+}
+
+function extractApiErrorDetail(response, text, data) {
+  if (data && typeof data === 'object') {
+    const candidates = [data.message, data.error, data.detail, data.msg, data.cause];
+    for (const value of candidates) {
+      const normalized = String(value || '').trim();
+      if (normalized) return normalized;
+    }
+  }
+
+  const normalizedText = String(text || '').trim();
+  if (normalizedText) return normalizedText;
+  return response?.statusText || `HTTP ${response?.status || 'unknown'}`;
 }
