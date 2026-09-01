@@ -117,7 +117,7 @@ test('workspace replaces the upload prompt with loaded file state', () => {
   assert.doesNotMatch(loadedHtml, /点击或拖拽 TXT 文件到这里/);
   assert.doesNotMatch(loadedHtml, /nai-source-text/);
   assert.match(loadedHtml, /测试小说\.txt/);
-  assert.match(loadedHtml, /查看原文/);
+  assert.match(loadedHtml, /toggle-chapter-source/);
 
   const openedHtml = renderWorkspace(project, { openChapterId: 1 });
   assert.match(openedHtml, /data-chapter-editor="1"/);

@@ -43,15 +43,19 @@
 .nai-tabs button { color:var(--nai-text-3); background:transparent; border:1px solid transparent; border-bottom:none; border-radius:8px 8px 0 0; padding:8px 12px; cursor:pointer; font-size:13px; transition:all .15s ease; }
 .nai-tabs button:hover { color:var(--nai-text); background:var(--nai-bg-hover); }
 .nai-tabs button.active { color:var(--nai-text); background:var(--nai-bg-panel); border-color:var(--nai-border); font-weight:600; }
-.nai-content { flex:1; min-height:0; overflow-y:auto; padding:14px 16px 10px; scroll-behavior:smooth; }
+.nai-content { flex:1; min-height:0; overflow-y:auto; padding:14px 16px 10px; }
 .nai-content::-webkit-scrollbar { width:6px; }
 .nai-content::-webkit-scrollbar-track { background:var(--nai-bg-page); }
 .nai-content::-webkit-scrollbar-thumb { background:var(--nai-border-hi); border-radius:3px; }
 
 .nai-section { margin-bottom:14px; }
-.nai-section-header { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 12px; background:var(--nai-bg-card); border:1px solid var(--nai-border); border-bottom:none; border-radius:8px 8px 0 0; }
-.nai-section-header h3 { display:flex; align-items:center; gap:8px; margin:0; font-size:14px; font-weight:600; }
+.nai-section-header { display:flex; align-items:center; gap:8px; padding:10px 12px; background:var(--nai-bg-card); border:1px solid var(--nai-border); border-bottom:none; border-radius:8px 8px 0 0; }
+.nai-section-header h3 { display:flex; flex:1; align-items:center; gap:8px; margin:0; font-size:14px; font-weight:600; }
 .nai-section-header h3 span { color:var(--nai-accent-hi); }
+#novelai-panel .nai-section-toggle { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; flex:0 0 auto; padding:0; margin:0; color:var(--nai-text-3); background:transparent; border:0; border-radius:5px; cursor:pointer; font-size:12px; line-height:1; transition:color .15s ease, background .15s ease; }
+#novelai-panel .nai-section-toggle:hover { color:var(--nai-text); background:var(--nai-bg-hover); }
+.nai-section.is-collapsed .nai-section-content { display:none; }
+.nai-section.is-collapsed .nai-section-header { border-bottom:1px solid var(--nai-border); border-radius:8px; }
 .nai-section-content { padding:12px; background:var(--nai-bg-panel); border:1px solid var(--nai-border); border-radius:0 0 8px 8px; }
 .nai-section-actions { display:flex; gap:6px; }
 .nai-workspace { max-width:900px; margin:0 auto; }
@@ -85,6 +89,7 @@
 .nai-btn-tiny { padding:3px 7px; font-size:11px; }
 .nai-icon-btn { min-width:28px; padding:4px 6px !important; }
 .nai-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:7px; margin-top:9px; }
+.nai-toolbar-sep { width:1px; height:18px; background:var(--nai-border-hi); flex:0 0 auto; }
 .nai-setting-hint, .nai-feedback { color:var(--nai-text-3); font-size:12px; line-height:1.55; }
 .nai-feedback { margin-top:7px; }
 .nai-empty { padding:24px 12px; color:var(--nai-text-3); text-align:center; font-size:12px; }
@@ -114,6 +119,7 @@
 .nai-chapter-title strong em { margin-right:7px; color:var(--nai-accent-hi); font-size:10px; font-style:normal; }
 .nai-chapter-title span, .nai-chapter-actions { color:var(--nai-text-3); font-size:11px; }
 .nai-chapter-title small { overflow:hidden; max-width:430px; color:var(--nai-text-3); text-overflow:ellipsis; white-space:nowrap; font-size:10px; font-weight:400; }
+.nai-chevron { margin-left:6px; color:var(--nai-text-3); font-size:11px; }
 .nai-chapter-actions { display:flex; flex-wrap:wrap; gap:5px; }
 .nai-chapter-source { margin-top:10px; padding-top:10px; border-top:1px solid var(--nai-border); }
 .nai-chapter-source-header { display:flex; align-items:center; gap:9px; margin-bottom:10px; color:var(--nai-text-2); font-size:12px; }

@@ -22,6 +22,7 @@ export class NovelAiPanel {
     this.openChapterId = null;
     this.openCategoryIds = new Set();
     this.openEntryIds = new Set();
+    this.collapsedSections = new Set();
     this.updateInProgress = false;
     this.unsubscribe = null;
   }
@@ -88,11 +89,12 @@ export class NovelAiPanel {
         openCategoryIds: this.openCategoryIds,
         openEntryIds: this.openEntryIds,
         isProcessing: this.store.isJobRunning?.() || false,
+        collapsedSections: this.collapsedSections,
       })
       : this.tab === 'outline'
-        ? renderOutline(project || {})
+        ? renderOutline(project || {}, { collapsedSections: this.collapsedSections })
         : this.tab === 'overview'
-          ? renderOverview(project || {}, this.overviewChapterId || project?.runtime?.currentStage?.chapterId)
+          ? renderOverview(project || {}, this.overviewChapterId || project?.runtime?.currentStage?.chapterId, { collapsedSections: this.collapsedSections })
           : renderSettings(settings, { actor: this.settingsStore.getApiKey('actor'), director: this.settingsStore.getApiKey('director') });
     this.root.innerHTML = `<div class="nai-app-header"><div class="nai-brand"><span class="nai-brand-icon">&#127917;</span><div><h2>NovelAI</h2><span>A1.2 · ${loadedLabel}</span></div></div><div class="nai-header-actions"><button class="nai-btn nai-btn-small" data-action="update-plugin" ${this.updateInProgress ? 'disabled' : ''}>${this.updateInProgress ? '\u23f3 \u66f4\u65b0\u4e2d...' : '\u66f4\u65b0\u63d2\u4ef6'}</button><button class="nai-btn nai-btn-small nai-close" data-action="close-panel" aria-label="\u5173\u95ed">&times;</button></div></div><nav class="nai-tabs">${tabLabels.map(([key, label]) => `<button class="${this.tab === key ? 'active' : ''}" data-tab="${key}">${label}</button>`).join('')}</nav><main class="nai-content">${body}</main>`;
     const nextContent = this.root.querySelector('.nai-content');
@@ -160,6 +162,7 @@ export class NovelAiPanel {
     const action = target.dataset.action;
     try {
       if (action === 'close-panel') this.toggleDrawer(false);
+      else if (action === 'toggle-section') { const key = target.dataset.id; if (this.collapsedSections.has(key)) this.collapsedSections.delete(key); else this.collapsedSections.add(key); this.render(); }
       else if (action === 'choose-file') this.root.querySelector('#nai-txt-file')?.click();
       else if (action === 'update-plugin') await this.updateSelfFromRepo();
       else if (action === 'capture') await this.capture();
@@ -190,6 +193,8 @@ export class NovelAiPanel {
       else if (action === 'add-category') await this.addCategory();
       else if (action === 'toggle-light') await this.toggleEntry(target.dataset.id);
       else if (action === 'toggle-entry') { this.toggleOpenId(this.openEntryIds, target.dataset.id); this.render(); }
+      else if (action === 'expand-all-entries') { (this.store.getProject()?.worldbookEntries || []).forEach((entry) => this.openEntryIds.add(entry.id)); this.render(); }
+      else if (action === 'collapse-all-entries') { this.openEntryIds.clear(); this.render(); }
       else if (action === 'delete-entry') await this.deleteEntries([target.dataset.id]);
       else if (action === 'delete-selected-entries') await this.deleteEntries(this.selectedEntries());
       else if (action === 'merge-selected') await this.mergeSelected();
