@@ -2,6 +2,7 @@ import { renderWorkspace } from './views/workspaceView.js';
 import { renderOutline, renderOverview } from './views/storyView.js';
 import { renderSettings } from './views/settingsView.js';
 import { toCharacterCard, toProjectPackage, toSillyTavernWorldbook } from '../domain/worldbook/exportWorldbook.js';
+import { ensureDrawerLauncher, getExtensionFolderName } from './drawerLauncher.js';
 
 const POSITION_VALUES = ['before_char', 'after_char', 'before_author', 'after_author', 'depth'];
 
@@ -57,37 +58,7 @@ export class NovelAiPanel {
   }
 
   async ensureDrawer() {
-    const existingWrapper = document.querySelector('#novelai-wrapper');
-    if (existingWrapper && existingWrapper.querySelector('#novelai-icon')) {
-      this.drawerRoot = existingWrapper;
-      return existingWrapper;
-    }
-
-    const folder = getExtensionFolderName();
-    let html = '';
-    try {
-      html = await this.adapter.renderTemplate?.(`third-party/${folder}`, 'drawer-component');
-    } catch {
-      html = '';
-    }
-    if (!html || !String(html).trim()) {
-      html = '<div id="novelai-wrapper" class="drawer"><div class="drawer-toggle" title="NovelAI" role="button" tabindex="0"><div id="novelai-icon" class="drawer-icon fa-solid fa-clapperboard fa-fw interactable" aria-label="NovelAI"></div></div></div>';
-    }
-
-    if (existingWrapper) {
-      existingWrapper.innerHTML = html;
-      this.drawerRoot = existingWrapper;
-      return existingWrapper;
-    }
-
-    const anchor = document.querySelector('#extensions-settings-button');
-    const container = anchor ? anchor.parentElement : (document.querySelector('#extensions_settings2') || document.body);
-    if (anchor) {
-      container.insertAdjacentHTML('afterend', html);
-    } else {
-      container.insertAdjacentHTML('beforeend', html);
-    }
-    this.drawerRoot = document.querySelector('#novelai-wrapper');
+    this.drawerRoot = await ensureDrawerLauncher({ adapter: this.adapter, documentRef: document });
     return this.drawerRoot;
   }
 
@@ -275,9 +246,8 @@ export class NovelAiPanel {
     if (el.dataset.entryContent) await this.store.update((draft) => { const entry = draft.worldbookEntries.find((item) => item.id === el.dataset.entryContent); if (entry) entry.content = el.value; return draft; });
     if (el.dataset.apiKey) this.settingsStore.setApiKey(el.dataset.apiKey, el.value);
   }
-}
 
-async updateSelfFromRepo(repoUrl) {
+  async updateSelfFromRepo(repoUrl) {
     const normalizedRepoUrl = normalizeRepoUrl(repoUrl);
     if (!normalizedRepoUrl) {
       this.notify('error', '仓库地址无效，无法更新插件');
@@ -316,11 +286,6 @@ async updateSelfFromRepo(repoUrl) {
     const detail = extractApiErrorDetail(installResult.response, installResult.text, installResult.data);
     this.notify('error', `安装失败：${detail}`);
   }
-}
-
-function getExtensionFolderName() {
-  const match = /\/scripts\/extensions\/third-party\/([^/]+)\//.exec(import.meta.url);
-  return match?.[1] ? decodeURIComponent(match[1]) : 'NovelAI';
 }
 
 function normalizeRepoUrl(repoUrl) {

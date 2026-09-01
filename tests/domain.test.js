@@ -23,6 +23,25 @@ import { ApiRequestError, withRateLimitRetry } from '../src/services/api/retryPo
 import { readSseResponse } from '../src/services/api/responseParsers.js';
 import { ProjectStore } from '../src/services/storage/projectStore.js';
 import { SettingsStore } from '../src/services/storage/settingsStore.js';
+import { mountDrawerAtTopbar } from '../src/ui/drawerLauncher.js';
+
+test('drawer launcher is mounted after the SillyTavern extensions button', () => {
+  const wrapper = { id: 'novelai-wrapper' };
+  let placement = null;
+  const anchor = {
+    insertAdjacentElement(position, element) { placement = { position, element, receiver: 'anchor' }; },
+  };
+  const documentRef = {
+    querySelector(selector) {
+      if (selector === '#extensions-settings-button') return anchor;
+      if (selector === '#novelai-wrapper') return wrapper;
+      return null;
+    },
+  };
+
+  assert.equal(mountDrawerAtTopbar(documentRef, '<div></div>'), wrapper);
+  assert.deepEqual(placement, { position: 'afterend', element: wrapper, receiver: 'anchor' });
+});
 
 test('clean preview/apply is exact and version-sensitive', () => {
   const source = '第一章\n广告\n正文'; const preview = previewClean(source, '广告');
