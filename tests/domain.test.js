@@ -26,6 +26,8 @@ import { SettingsStore } from '../src/services/storage/settingsStore.js';
 import { mountDrawerAtTopbar } from '../src/ui/drawerLauncher.js';
 import { normalizeSourceFile } from '../src/domain/project/normalizeSourceFile.js';
 import { renderWorkspace } from '../src/ui/views/workspaceView.js';
+import { renderChapterQueue } from '../src/ui/views/chapterQueueView.js';
+import { renderWorkspaceActions } from '../src/ui/views/workspaceActionsView.js';
 import { readImportFile } from '../src/services/files/readImportFile.js';
 import { formatBytes } from '../src/utils/html.js';
 import { updateExtensionFromRepo } from '../src/services/platform/extensionUpdater.js';
@@ -117,12 +119,33 @@ test('workspace replaces the upload prompt with loaded file state', () => {
   assert.doesNotMatch(loadedHtml, /点击或拖拽 TXT 文件到这里/);
   assert.doesNotMatch(loadedHtml, /nai-source-text/);
   assert.match(loadedHtml, /测试小说\.txt/);
-  assert.match(loadedHtml, /toggle-chapter-source/);
+  assert.match(loadedHtml, /open-chapter-dialog/);
+  assert.doesNotMatch(loadedHtml, /data-chapter-editor/);
+  assert.match(loadedHtml, /查看、编辑、复制或合并原文/);
+});
 
-  const openedHtml = renderWorkspace(project, { openChapterId: 1 });
-  assert.match(openedHtml, /data-chapter-editor="1"/);
-  assert.match(openedHtml, /第一章\n正文/);
-  assert.match(openedHtml, /保存修改/);
+test('chapter queue follows the humanized old-project layout without removed features', () => {
+  const chapters = [
+    { chapterId: 1, chapterName: '第一章 开始', text: '第一章 开始\n正文内容', charCount: 14, confirmed: true, status: 'succeeded' },
+    { chapterId: 2, chapterName: '第二章 继续', text: '第二章 继续\n待检查正文', charCount: 15, confirmed: false, status: 'pending' },
+  ];
+  const normal = renderChapterQueue(chapters);
+  assert.match(normal, /点击章节可查看、编辑、复制或合并原文/);
+  assert.match(normal, /open-chapter-dialog/);
+  assert.match(normal, /多选删除/);
+  assert.match(normal, /#1/);
+  assert.match(normal, /正文内容/);
+  assert.doesNotMatch(normal, /Roll历史|选择起始/);
+  assert.doesNotMatch(normal, /data-select-chapter/);
+
+  const selecting = renderChapterQueue(chapters, { multiSelect: true, selectedChapterIds: new Set([2]) });
+  assert.match(selecting, /取消选择/);
+  assert.match(selecting, /删除已选/);
+  assert.match(selecting, /data-select-chapter="2"[^>]+checked/);
+
+  const actions = renderWorkspaceActions({ chapters, categoryConfigs: [{ enabled: true }], worldbookEntries: [], beatAssets: [] });
+  assert.match(actions, /仅提取世界书/);
+  assert.match(actions, /仅导演解析节拍/);
 });
 
 test('clean preview summary restores chapter and segment statistics', () => {

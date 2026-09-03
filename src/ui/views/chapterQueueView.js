@@ -1,22 +1,25 @@
 import { escapeHtml, formatCount } from '../../utils/html.js';
 
-function renderChapterCard(chapter, index, openChapterId) {
-  const isOpen = chapter.chapterId === openChapterId;
-  const status = chapter.confirmed ? '✅ 已确认' : '⚠️ 待确认';
-  const charCount = Number.isFinite(chapter.charCount) ? chapter.charCount : String(chapter.text || '').length;
-  const sourceEditor = isOpen
-    ? `<div class="nai-chapter-source" data-chapter-source="${chapter.chapterId}"><div class="nai-chapter-source-header"><strong>📝 原文内容</strong><span>${formatCount(charCount)} 字</span><button class="nai-btn nai-btn-small" data-action="copy-chapter" data-id="${chapter.chapterId}">📋 复制</button></div><label class="nai-chapter-field"><span>章节名称</span><input class="nai-input" data-chapter-name="${chapter.chapterId}" value="${escapeHtml(chapter.chapterName)}"></label><label class="nai-chapter-field"><span>章节原文</span><textarea data-chapter-editor="${chapter.chapterId}" rows="14">${escapeHtml(chapter.text)}</textarea></label><div class="nai-chapter-source-actions"><button class="nai-btn nai-btn-primary" data-action="save-chapter" data-id="${chapter.chapterId}">💾 保存修改</button><span>修改后，本章相关世界书与节拍会标记为需要重新生成。</span></div></div>`
-    : '';
-
-  const preview = String(chapter.text || '').replace(/\s+/g, ' ').trim().slice(0, 36);
-  return `<article class="nai-chapter-card ${isOpen ? 'is-open' : ''}"><div class="nai-chapter-row"><div class="nai-chapter-main"><input type="checkbox" data-select-chapter="${chapter.chapterId}" aria-label="选择 ${escapeHtml(chapter.chapterName)}"><button class="nai-chapter-title" data-action="toggle-chapter-source" data-id="${chapter.chapterId}" aria-expanded="${isOpen}" title="点击查看/编辑原文"><strong><em>#${index + 1}</em>${escapeHtml(chapter.chapterName)}<span class="nai-chevron" aria-hidden="true">${isOpen ? '▾' : '▸'}</span></strong><span>${formatCount(charCount)} 字 · ${status}</span><small>${escapeHtml(preview)}${String(chapter.text || '').length > 36 ? '…' : ''}</small></button></div><div class="nai-chapter-actions">${chapter.confirmed ? '' : `<button class="nai-btn nai-btn-small nai-btn-primary" data-action="confirm-chapter" data-id="${chapter.chapterId}">确认</button>`}<button class="nai-btn nai-btn-small" data-action="merge-chapter" data-id="${chapter.chapterId}" data-direction="previous">合并上章</button><button class="nai-btn nai-btn-small" data-action="merge-chapter" data-id="${chapter.chapterId}" data-direction="next">合并下章</button></div></div>${sourceEditor}</article>`;
+function statusText(chapter) {
+  if (chapter.status === 'running') return '🔄 处理中';
+  if (chapter.status === 'failed') return '❌ 处理失败';
+  if (chapter.confirmed) return '✅ 已确认';
+  return '⏳ 待确认';
 }
 
-export function renderChapterQueue(chapters = [], { openChapterId = null } = {}) {
+function renderChapterCard(chapter, index, { multiSelect = false, selected = false } = {}) {
+  const charCount = Number.isFinite(chapter.charCount) ? chapter.charCount : String(chapter.text || '').length;
+  const preview = String(chapter.text || '').replace(/\s+/g, ' ').trim().slice(0, 90);
+  const selectedMark = multiSelect ? `<input type="checkbox" data-select-chapter="${chapter.chapterId}" ${selected ? 'checked' : ''} aria-label="选择 ${escapeHtml(chapter.chapterName)}">` : '';
+  return `<article class="nai-chapter-card nai-chapter-list-item ${selected ? 'is-selected' : ''}" data-chapter-id="${chapter.chapterId}"><div class="nai-chapter-list-leading">${selectedMark}<span class="nai-chapter-status">${statusText(chapter)}</span></div><button class="nai-chapter-list-main" data-action="open-chapter-dialog" data-id="${chapter.chapterId}" title="点击查看、编辑、复制或合并本章"><strong><em>#${index + 1}</em>${escapeHtml(chapter.chapterName)}<span class="nai-chevron" aria-hidden="true">▸</span></strong><span>${formatCount(charCount)} 字 · ${escapeHtml(preview)}${String(chapter.text || '').length > 90 ? '…' : ''}</span></button>${chapter.confirmed ? '' : `<button class="nai-btn nai-btn-small nai-btn-primary" data-action="confirm-chapter" data-id="${chapter.chapterId}">确认</button>`}</article>`;
+}
+
+export function renderChapterQueue(chapters = [], { multiSelect = false, selectedChapterIds = new Set() } = {}) {
   const confirmedCount = chapters.filter((item) => item.confirmed).length;
-  const summary = `<div class="nai-queue-summary"><span>共 ${formatCount(chapters.length)} 章</span><span>${formatCount(confirmedCount)} 章已确认</span><span class="nai-queue-hint">点击章节名称可查看和编辑原文</span><button class="nai-btn nai-btn-danger" data-action="delete-selected-chapters" ${chapters.length ? '' : 'disabled'}>🗑️ 删除选中</button></div>`;
+  const selectedCount = selectedChapterIds.size;
+  const summary = `<div class="nai-queue-summary"><div class="nai-queue-summary-stats"><strong>共 ${formatCount(chapters.length)} 章</strong><span>${formatCount(confirmedCount)} 章已确认</span><span>${multiSelect ? `已选择 ${formatCount(selectedCount)} 章` : '点击章节可查看、编辑、复制或合并原文'}</span></div><div class="nai-queue-summary-actions">${multiSelect ? `<button class="nai-btn nai-btn-small" data-action="clear-selected-chapters">取消选择</button><button class="nai-btn nai-btn-small nai-btn-danger" data-action="delete-selected-chapters" ${selectedCount ? '' : 'disabled'}>🗑️ 删除已选</button>` : `<button class="nai-btn nai-btn-small" data-action="toggle-chapter-select-mode" ${chapters.length ? '' : 'disabled'}>🗑️ 多选删除</button>`}</div></div>`;
   const cards = chapters.length
-    ? chapters.map((chapter, index) => renderChapterCard(chapter, index, openChapterId)).join('')
+    ? chapters.map((chapter, index) => renderChapterCard(chapter, index, { multiSelect, selected: selectedChapterIds.has(chapter.chapterId) })).join('')
     : '<div class="nai-empty">导入 TXT 并检测章节后，这里会显示章节队列</div>';
   return `${summary}<div class="nai-chapter-queue">${cards}</div>`;
 }

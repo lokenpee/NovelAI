@@ -7,6 +7,9 @@ import { readImportFile } from '../services/files/readImportFile.js';
 import { NOVELAI_REPO_URL, updateExtensionFromRepo } from '../services/platform/extensionUpdater.js';
 import { summarizeCleanPreview } from '../domain/text/summarizeCleanPreview.js';
 import { renderCleanPreviewSummary } from './views/cleanPreviewView.js';
+import { renderWorkspaceActions } from './views/workspaceActionsView.js';
+import { showManualMergeDialog } from './manualMergeDialog.js';
+import { showChapterDialog } from './chapterDialog.js';
 
 export class NovelAiPanel {
   constructor({ store, settingsStore, apiRouter, adapter, logger }) {
@@ -19,9 +22,12 @@ export class NovelAiPanel {
     this.drawerRoot = null;
     this.tab = 'workspace';
     this.overviewChapterId = null;
-    this.openChapterId = null;
+    this.multiSelectChapters = false;
+    this.selectedChapterIds = new Set();
     this.openCategoryIds = new Set();
     this.openEntryIds = new Set();
+    this.openResultCategoryIds = new Set();
+    this.selectedEntryIds = new Set();
     this.collapsedSections = new Set();
     this.updateInProgress = false;
     this.unsubscribe = null;
@@ -74,7 +80,13 @@ export class NovelAiPanel {
     if (!this.root) return;
     const previousScrollTop = preserveScroll ? (this.root.querySelector('.nai-content')?.scrollTop || 0) : 0;
     const project = this.store.getProject();
+    const currentEntryIds = new Set((project?.worldbookEntries || []).map((entry) => entry.id));
+    for (const id of this.selectedEntryIds) if (!currentEntryIds.has(id)) this.selectedEntryIds.delete(id);
+    const currentChapterIds = new Set((project?.chapters || []).map((chapter) => chapter.chapterId));
+    for (const id of this.selectedChapterIds) if (!currentChapterIds.has(id)) this.selectedChapterIds.delete(id);
+    for (const id of this.openEntryIds) if (!currentEntryIds.has(id)) this.openEntryIds.delete(id);
     const settings = this.settingsStore.load();
+    const isProcessing = this.store.isJobRunning?.() || false;
     const hasProjectData = !!project && (String(project.sourceText || '').trim() || (project.chapters || []).length || (project.worldbookEntries || []).length || (project.beatAssets || []).length);
     const loadedLabel = hasProjectData ? '项目已载入' : '等待导入小说';
     const tabLabels = [
@@ -85,10 +97,13 @@ export class NovelAiPanel {
     ];
     const body = this.tab === 'workspace'
       ? renderWorkspace(project || {}, {
-        openChapterId: this.openChapterId,
         openCategoryIds: this.openCategoryIds,
         openEntryIds: this.openEntryIds,
-        isProcessing: this.store.isJobRunning?.() || false,
+        openResultCategoryIds: this.openResultCategoryIds,
+        selectedEntryIds: this.selectedEntryIds,
+        multiSelectChapters: this.multiSelectChapters,
+        selectedChapterIds: this.selectedChapterIds,
+        isProcessing,
         collapsedSections: this.collapsedSections,
       })
       : this.tab === 'outline'
@@ -96,7 +111,8 @@ export class NovelAiPanel {
         : this.tab === 'overview'
           ? renderOverview(project || {}, this.overviewChapterId || project?.runtime?.currentStage?.chapterId, { collapsedSections: this.collapsedSections })
           : renderSettings(settings, { actor: this.settingsStore.getApiKey('actor'), director: this.settingsStore.getApiKey('director') });
-    this.root.innerHTML = `<div class="nai-app-header"><div class="nai-brand"><span class="nai-brand-icon">&#127917;</span><div><h2>NovelAI</h2><span>A1.2 · ${loadedLabel}</span></div></div><div class="nai-header-actions"><button class="nai-btn nai-btn-small" data-action="update-plugin" ${this.updateInProgress ? 'disabled' : ''}>${this.updateInProgress ? '\u23f3 \u66f4\u65b0\u4e2d...' : '\u66f4\u65b0\u63d2\u4ef6'}</button><button class="nai-btn nai-btn-small nai-close" data-action="close-panel" aria-label="\u5173\u95ed">&times;</button></div></div><nav class="nai-tabs">${tabLabels.map(([key, label]) => `<button class="${this.tab === key ? 'active' : ''}" data-tab="${key}">${label}</button>`).join('')}</nav><main class="nai-content">${body}</main>`;
+    const workspaceActions = this.tab === 'workspace' ? renderWorkspaceActions(project || {}, { isProcessing }) : '';
+    this.root.innerHTML = `<div class="nai-app-header"><div class="nai-brand"><span class="nai-brand-icon">&#127917;</span><div><h2>NovelAI</h2><span>A1.2 · ${loadedLabel}</span></div></div><div class="nai-header-actions"><button class="nai-btn nai-btn-small" data-action="update-plugin" ${this.updateInProgress ? 'disabled' : ''}>${this.updateInProgress ? '\u23f3 \u66f4\u65b0\u4e2d...' : '\u66f4\u65b0\u63d2\u4ef6'}</button><button class="nai-btn nai-btn-small nai-close" data-action="close-panel" aria-label="\u5173\u95ed">&times;</button></div></div><nav class="nai-tabs">${tabLabels.map(([key, label]) => `<button class="${this.tab === key ? 'active' : ''}" data-tab="${key}">${label}</button>`).join('')}</nav><main class="nai-content">${body}</main>${workspaceActions}`;
     const nextContent = this.root.querySelector('.nai-content');
     if (nextContent && previousScrollTop) nextContent.scrollTop = previousScrollTop;
     this.root.querySelector('#nai-txt-file')?.addEventListener('change', (event) => this.readFile(event.target.files?.[0]));
@@ -109,12 +125,12 @@ export class NovelAiPanel {
       if (imported.kind === 'json') {
         const parsed = JSON.parse(imported.text);
         if (!parsed.schemaVersion && parsed.data?.character_book) throw new Error('\u8fd9\u662f\u89d2\u8272\u5361\u6587\u4ef6\uff0c\u8bf7\u4f7f\u7528\u4e16\u754c\u4e66/\u5de5\u7a0b\u5305\u5bfc\u5165');
-        this.openChapterId = null;
+        this.resetWorkspaceUiState();
         await this.store.replace(parsed);
         this.notify('success', '\u5de5\u7a0b\u5305\u5bfc\u5165\u6210\u529f');
       } else {
+        this.resetWorkspaceUiState();
         await this.store.importTxt(imported.text, { name: file.name, size: file.size, lastModified: file.lastModified, encoding: imported.encoding });
-        this.openChapterId = null;
         this.notify('success', `\u5df2\u5bfc\u5165 TXT\uff08${imported.text.length.toLocaleString()} \u5b57\uff0c${imported.encoding}\uff09`);
       }
     } catch (error) {
@@ -169,9 +185,9 @@ export class NovelAiPanel {
       else if (action === 'preview-clean') await this.previewClean();
       else if (action === 'apply-clean') { const result = await this.store.applyCleanPreview(); this.notify('success', `\u5df2\u5220\u9664 ${result.deletedCount} \u5904\u91cd\u590d\u7247\u6bb5`); }
       else if (action === 'clean-impurities') await this.cleanImpurities();
-      else if (action === 'toggle-chapter-source') { const id = Number(target.dataset.id); this.openChapterId = this.openChapterId === id ? null : id; this.render(); }
-      else if (action === 'copy-chapter') await this.copyChapter(Number(target.dataset.id));
-      else if (action === 'save-chapter') await this.saveChapter(Number(target.dataset.id));
+      else if (action === 'toggle-chapter-select-mode') { this.multiSelectChapters = true; this.selectedChapterIds.clear(); this.render(); }
+      else if (action === 'clear-selected-chapters') { this.multiSelectChapters = false; this.selectedChapterIds.clear(); this.render(); }
+      else if (action === 'open-chapter-dialog') await this.openChapterDialog(Number(target.dataset.id));
       else if (action === 'confirm-chapter') await this.store.confirmChapter(Number(target.dataset.id));
       else if (action === 'merge-chapter') { if (await this.adapter.confirm('\u5408\u5e76\u7ae0\u8282', '\u5408\u5e76\u540e\u9700\u91cd\u65b0\u786e\u8ba4\u53d7\u5f71\u54cd\u8d44\u4ea7\uff0c\u7ee7\u7eed\u5417\uff1f')) await this.store.mergeChapter(Number(target.dataset.id), target.dataset.direction === 'previous' ? 'previous' : 'next'); }
       else if (action === 'delete-selected-chapters') await this.deleteSelectedChapters();
@@ -179,7 +195,7 @@ export class NovelAiPanel {
       else if (action === 'import-project') this.root.querySelector('#nai-txt-file')?.click();
       else if (action === 'reset-project') {
         if (await this.adapter.confirm('清空当前项目', '这会清除当前正文、章节和世界书状态，立即返回空白工作台。继续吗？')) {
-          this.openChapterId = null;
+          this.resetWorkspaceUiState();
           await this.store.resetProject();
           this.notify('info', '已返回空白项目状态');
         }
@@ -193,13 +209,11 @@ export class NovelAiPanel {
       else if (action === 'add-category') await this.addCategory();
       else if (action === 'toggle-light') await this.toggleEntry(target.dataset.id);
       else if (action === 'toggle-entry') { this.toggleOpenId(this.openEntryIds, target.dataset.id); this.render(); }
-      else if (action === 'expand-all-entries') { (this.store.getProject()?.worldbookEntries || []).forEach((entry) => this.openEntryIds.add(entry.id)); this.render(); }
-      else if (action === 'collapse-all-entries') { this.openEntryIds.clear(); this.render(); }
+      else if (action === 'toggle-result-category') { this.toggleOpenId(this.openResultCategoryIds, target.dataset.id); this.render(); }
       else if (action === 'delete-entry') await this.deleteEntries([target.dataset.id]);
-      else if (action === 'delete-selected-entries') await this.deleteEntries(this.selectedEntries());
+      else if (action === 'delete-selected-entries') await this.deleteEntries([...this.selectedEntryIds]);
       else if (action === 'merge-selected') await this.mergeSelected();
-      else if (action === 'organize-selected') await this.organizeSelected();
-      else if (action === 'parse-beats') { await this.store.runBeats(); this.notify('success', '\u8282\u62cd\u89e3\u6790\u5b8c\u6210'); }
+      else if (action === 'parse-beats') await this.parseBeats();
       else if (action === 'reroll-beat') { await this.store.rerollBeat(Number(target.dataset.id)); this.notify('success', '\u672c\u7ae0\u8282\u62cd\u5df2\u91cd roll'); }
       else if (action === 'toggle-outline') { const body = this.root.querySelector(`[data-outline-body="${target.dataset.id}"]`); body?.classList.toggle('is-open'); target.classList.toggle('is-open'); }
       else if (action === 'view-overview') { this.overviewChapterId = Number(target.dataset.id); this.tab = 'overview'; this.render(); }
@@ -223,7 +237,6 @@ export class NovelAiPanel {
   }
 
   async capture() {
-    this.openChapterId = null;
     const result = await this.store.capture(this.root.querySelector('#nai-chapter-regex')?.value);
     const el = this.root.querySelector('#nai-capture-result');
     if (el) el.textContent = result.errors?.length ? `\u274c ${result.errors.join('\uff1b')}` : `\u2705 \u68c0\u6d4b\u5230 ${result.chapters.length} \u4e2a\u7ae0\u8282`;
@@ -254,39 +267,62 @@ export class NovelAiPanel {
     }
   }
 
+  async parseBeats() { await this.store.runBeats(); this.notify('success', '节拍解析完成'); }
+
+  resetWorkspaceUiState() {
+    this.multiSelectChapters = false;
+    this.selectedChapterIds = new Set();
+    this.openCategoryIds = new Set();
+    this.openEntryIds = new Set();
+    this.openResultCategoryIds = new Set();
+    this.selectedEntryIds = new Set();
+    this.collapsedSections = new Set();
+    this.overviewChapterId = null;
+  }
+
   toggleOpenId(set, id) { if (set.has(id)) set.delete(id); else set.add(id); }
+
+  async openChapterDialog(id) {
+    const chapters = this.store.getProject()?.chapters || [];
+    const index = chapters.findIndex((chapter) => chapter.chapterId === id);
+    if (index < 0) throw new Error('章节不存在');
+    const result = await showChapterDialog({ chapter: chapters[index], index, total: chapters.length });
+    if (!result) return;
+    if (result.type === 'save') {
+      await this.store.editChapter(id, { chapterName: result.chapterName, text: result.text });
+      this.notify('success', '章节修改已保存');
+    } else if (result.type === 'delete') {
+      if (await this.adapter.confirm('删除章节', `确认删除「${chapters[index].chapterName}」？相关世界书和节拍也会失效。`)) await this.store.deleteChapter([id]);
+    } else if (result.type === 'merge') {
+      const directionLabel = result.direction === 'previous' ? '上一章' : '下一章';
+      if (await this.adapter.confirm(`合并到${directionLabel}`, `确认将「${chapters[index].chapterName}」合并到${directionLabel}？当前章会被删除，相关资产需要重新生成。`)) {
+        await this.store.editChapter(id, { chapterName: chapters[index].chapterName, text: result.text });
+        await this.store.mergeChapter(id, result.direction);
+      }
+    }
+    this.multiSelectChapters = false;
+    this.selectedChapterIds.clear();
+    this.render();
+  }
 
   async cleanImpurities() { if (await this.adapter.confirm('\u5220\u9664\u6742\u8d28', '\u5c06\u5220\u9664\u7ae0\u8282\u5916\u5185\u5bb9\u53ca\u660e\u663e\u5e7f\u544a\uff0c\u7ee7\u7eed\u5417\uff1f')) { const result = await this.store.cleanImpurities(); this.notify('success', `\u5df2\u5904\u7406 ${result.removed.length} \u5904\u7591\u4f3c\u6742\u8d28`); } }
   async previewPrompt() { const { buildPromptPreview } = await import('../domain/worldbook/prompts.js'); await this.adapter.confirm('\u63d0\u793a\u8bcd\u9884\u89c8', buildPromptPreview(this.store.getProject().categoryConfigs).slice(0, 6000)); }
-  async copyChapter(id) {
-    const chapter = this.store.getProject()?.chapters?.find((item) => item.chapterId === id);
-    if (!chapter) throw new Error('\u7ae0\u8282\u4e0d\u5b58\u5728');
-    if (!globalThis.navigator?.clipboard?.writeText) throw new Error('\u5f53\u524d\u73af\u5883\u4e0d\u652f\u6301\u526a\u8d34\u677f');
-    await globalThis.navigator.clipboard.writeText(chapter.text);
-    this.notify('success', '\u7ae0\u8282\u539f\u6587\u5df2\u590d\u5236');
-  }
-
-  async saveChapter(id) {
-    const chapter = this.store.getProject()?.chapters?.find((item) => item.chapterId === id);
-    if (!chapter) throw new Error('\u7ae0\u8282\u4e0d\u5b58\u5728');
-    const chapterName = this.root.querySelector(`[data-chapter-name="${id}"]`)?.value ?? chapter.chapterName;
-    const text = this.root.querySelector(`[data-chapter-editor="${id}"]`)?.value ?? chapter.text;
-    if (chapterName === chapter.chapterName && text === chapter.text) {
-      this.notify('info', '\u7ae0\u8282\u5185\u5bb9\u6ca1\u6709\u53d8\u5316');
-      return;
-    }
-    await this.store.editChapter(id, { chapterName, text });
-    this.openChapterId = id;
-    this.notify('success', '\u7ae0\u8282\u4fee\u6539\u5df2\u4fdd\u5b58');
-  }
-  async deleteSelectedChapters() { const ids = this.selectedChapters(); if (ids.length && await this.adapter.confirm('\u5220\u9664\u7ae0\u8282', `\u786e\u8ba4\u5220\u9664 ${ids.length} \u4e2a\u7ae0\u8282\uff1f`)) await this.store.deleteChapter(ids); }
-  selectedEntries() { return [...this.root.querySelectorAll('[data-select-entry]:checked')].map((el) => el.dataset.selectEntry); }
-  selectedChapters() { return [...this.root.querySelectorAll('[data-select-chapter]:checked')].map((el) => Number(el.dataset.selectChapter)); }
+  async deleteSelectedChapters() { const ids = [...this.selectedChapterIds]; if (ids.length && await this.adapter.confirm('\u5220\u9664\u7ae0\u8282', `\u786e\u8ba4\u5220\u9664 ${ids.length} \u4e2a\u7ae0\u8282\uff1f`)) { await this.store.deleteChapter(ids); this.multiSelectChapters = false; this.selectedChapterIds.clear(); } }
+  selectedChapters() { return [...this.selectedChapterIds]; }
   async addCategory() { const name = prompt('\u65b0\u7c7b\u522b\u540d\u79f0'); if (name?.trim()) await this.store.update((draft) => { draft.categoryConfigs.push({ id: `category_${Date.now()}`, name: name.trim(), enabled: true, fields: ['\u540d\u79f0', '\u5173\u952e\u8bcd'], prompt: '\u8bf7\u6839\u636e\u539f\u6587\u63d0\u53d6\u8be5\u7c7b\u522b\u4fe1\u606f\u3002', defaultConfig: { position: 'before_char', depth: 4, order: 300, autoIncrementOrder: true } }); return draft; }); }
   async toggleEntry(id) { await this.store.update((draft) => { const entry = draft.worldbookEntries.find((item) => item.id === id); if (entry) entry.constant = !entry.constant; return draft; }); }
   async deleteEntries(ids) { if (ids.length && await this.adapter.confirm('\u5220\u9664\u6761\u76ee', `\u786e\u8ba4\u5220\u9664 ${ids.length} \u4e2a\u6761\u76ee\uff1f`)) await this.store.update((draft) => { draft.worldbookEntries = draft.worldbookEntries.filter((entry) => !ids.includes(entry.id)); return draft; }); }
-  async mergeSelected() { const ids = this.selectedEntries(); if (ids.length < 2) throw new Error('\u81f3\u5c11\u9009\u62e9\u4e24\u4e2a\u6761\u76ee'); const { mergeSelectedEntries } = await import('../domain/worldbook/mergeEntry.js'); const name = prompt('\u5408\u5e76\u540e\u540d\u79f0\uff08\u53ef\u7559\u7a7a\uff09') || ''; await this.store.update((draft) => { draft.worldbookEntries = mergeSelectedEntries(draft.worldbookEntries, ids, { name }); return draft; }); }
-  async organizeSelected() { const ids = this.selectedEntries(); if (!ids.length) throw new Error('\u8bf7\u5148\u9009\u62e9\u6761\u76ee'); for (const id of ids) { const entry = this.store.getProject().worldbookEntries.find((item) => item.id === id); const result = await this.apiRouter.generate({ role: 'actor', prompt: `\u8bf7\u6574\u7406\u4ee5\u4e0b\u4e16\u754c\u4e66\u5185\u5bb9\uff0c\u53bb\u9664\u91cd\u590d\u4fe1\u606f\uff0c\u76f4\u63a5\u8f93\u51fa Markdown\uff1a\n${entry.content}` }); if (result.text?.trim()) await this.store.update((draft) => { draft.worldbookEntries.find((item) => item.id === id).content = result.text.trim(); return draft; }); } }
+  async mergeSelected() {
+    const project = this.store.getProject();
+    const entries = project?.worldbookEntries || [];
+    if (entries.length < 2) throw new Error('至少需要两个世界书条目才能合并');
+    const result = await showManualMergeDialog({ entries, categories: project?.categoryConfigs || [], selectedIds: [...this.selectedEntryIds] });
+    if (!result) return;
+    const { mergeSelectedEntries } = await import('../domain/worldbook/mergeEntry.js');
+    await this.store.update((draft) => { draft.worldbookEntries = mergeSelectedEntries(draft.worldbookEntries, result.ids, { name: result.name, category: result.category }); return draft; });
+    this.selectedEntryIds.clear();
+    this.notify('success', '已合并选中的条目');
+  }
   async exportCard() { const project = this.store.getProject(); const name = project.chapters?.[0]?.chapterName || 'NovelAI'; const card = toCharacterCard(project.worldbookEntries, { name, projectId: project.projectId, schemaVersion: project.schemaVersion }); const wrote = await this.adapter.writeCharacterExtension({ schemaVersion: project.schemaVersion, projectId: project.projectId, worldbook: card.data.character_book }); this.adapter.downloadJson(`novelai-character-card-${Date.now()}.json`, card); await this.store.update((draft) => { draft.exports.lastCharacterCardAt = Date.now(); return draft; }); this.notify(wrote ? 'success' : 'warning', wrote ? '\u5df2\u5bfc\u51fa\u89d2\u8272\u5361\uff0c\u8bf7\u5bfc\u5165\u540e\u5f00\u59cb\u804a\u5929' : '\u5df2\u5bfc\u51fa\u72ec\u7acb\u89d2\u8272\u5361'); }
   async editBeat(beatId) { const project = this.store.getProject(); const asset = project.beatAssets.find((item) => item.chapterId === this.overviewChapterId); const beat = asset?.beats.find((item) => item.beatId === beatId); if (!beat) return; const summary = prompt('\u4e8b\u4ef6\u6458\u8981', beat.summary); const exitCondition = summary === null ? null : prompt('\u9000\u51fa\u6761\u4ef6', beat.exitCondition); const text = exitCondition === null ? null : prompt('\u8282\u62cd\u539f\u6587', beat.text); if (text === null) return; const { updateBeatAsset } = await import('../domain/beats/mutateBeats.js'); await this.store.update((draft) => { const index = draft.beatAssets.findIndex((item) => item.chapterId === this.overviewChapterId); draft.beatAssets[index] = updateBeatAsset(draft.chapters.find((item) => item.chapterId === this.overviewChapterId), draft.beatAssets[index], beatId, { summary, exitCondition, text }); return draft; }); }
   async editStorySummary() { const asset = this.store.getProject().beatAssets.find((item) => item.chapterId === this.overviewChapterId); const summary = prompt('\u6545\u4e8b\u6458\u8981', asset?.summary || ''); if (summary !== null) await this.store.update((draft) => { draft.beatAssets.find((item) => item.chapterId === this.overviewChapterId).summary = summary; return draft; }); }
@@ -364,6 +400,13 @@ export class NovelAiPanel {
 
   async handleChange(event) {
     const el = event.target;
+    if (el.dataset.selectChapter) {
+      const id = Number(el.dataset.selectChapter);
+      if (el.checked) this.selectedChapterIds.add(id); else this.selectedChapterIds.delete(id);
+      this.render();
+      return;
+    }
+    if (el.dataset.selectEntry) { if (el.checked) this.selectedEntryIds.add(el.dataset.selectEntry); else this.selectedEntryIds.delete(el.dataset.selectEntry); this.render(); }
     if (el.dataset.categoryEnabled) await this.store.update((draft) => { const category = draft.categoryConfigs.find((item) => item.id === el.dataset.categoryEnabled); if (category) category.enabled = el.checked; return draft; });
     if (el.dataset.categoryPrompt) await this.store.update((draft) => { const category = draft.categoryConfigs.find((item) => item.id === el.dataset.categoryPrompt); if (category) category.prompt = el.value; return draft; });
     if (el.dataset.entryContent) await this.store.update((draft) => { const entry = draft.worldbookEntries.find((item) => item.id === el.dataset.entryContent); if (entry) entry.content = el.value; return draft; });
